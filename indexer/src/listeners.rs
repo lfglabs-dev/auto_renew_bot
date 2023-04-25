@@ -2,18 +2,16 @@ use std::sync::Arc;
 
 use crate::{
     config,
-    models::{AppState, Domain, DomainRenewals},
+    models::{AppState, AutoRenewals, Domain, DomainRenewals, RenewedDomains},
 };
 use apibara_core::starknet::v1alpha2::FieldElement;
 use bigdecimal::{num_bigint::BigUint, ToPrimitive};
 use chrono::{DateTime, TimeZone, Utc};
 use mongodb::{
     bson::{doc, Bson},
-    options::{FindOneAndUpdateOptions, InsertOneOptions},
+    options::{FindOneAndUpdateOptions, InsertOneOptions, UpdateOptions},
 };
 use starknet::{core::types, id::decode};
-
-// - auto_renew_enabled_domains
 
 pub async fn addr_to_domain_update(
     _: &config::Config,
@@ -21,45 +19,51 @@ pub async fn addr_to_domain_update(
     event_data: &Vec<FieldElement>,
 ) {
     let str_address = FieldElement::to_hex(&event_data[0]);
-    // if subdomain we don't need to store it
     let domain_len = &event_data[1];
-    if domain_len != &FieldElement::from_u64(1) {
-        return;
-    }
+    if domain_len == &FieldElement::from_u64(1) {
+        let domain_str = match types::FieldElement::from_bytes_be(&event_data[2].to_bytes()) {
+            Ok(bytes) => decode(bytes) + ".stark",
+            Err(e) => {
+                println!(
+                    "Error decoding domain bytes: {:?} for data: {:?}",
+                    e, event_data[2]
+                );
+                return;
+            }
+        };
 
-    let domain_str =
-        decode(types::FieldElement::from_bytes_be(&event_data[2].to_bytes()).unwrap()) + ".stark";
-    state
-        .db
-        .collection::<Domain>("domains")
-        .find_one_and_update(
-            doc! {"rev_addr": &str_address, "_chain.valid_to": Bson::Null},
-            doc! {"$unset": {"rev_addr": Bson::Null}},
-            Some(FindOneAndUpdateOptions::builder().build()),
-        )
-        .await
-        .map(|_| {})
-        .unwrap_or_else(|e| {
-            println!("Error while saving into db addr2domain: {:?}", e);
-        });
-
-    if !domain_str.is_empty() {
-        state
-            .db
-            .collection::<Domain>("domains")
-            .find_one_and_update(
+        let domain_collection = state.db.collection::<Domain>("domains");
+        let (filter, update) = if domain_str.is_empty() {
+            (
+                doc! {"rev_addr": &str_address, "_chain.valid_to": Bson::Null},
+                doc! {"$unset": {"rev_addr": Bson::Null}},
+            )
+        } else {
+            (
                 doc! {"domain": &domain_str, "_chain.valid_to": Bson::Null},
                 doc! {"$set": {"rev_addr": &str_address}},
+            )
+        };
+
+        match domain_collection
+            .find_one_and_update(
+                filter,
+                update,
                 Some(FindOneAndUpdateOptions::builder().build()),
             )
             .await
-            .map(|_| {})
-            .unwrap_or_else(|e| {
-                println!("Error while saving into db addr2domain: {:?}", e);
-            });
+        {
+            Ok(_) => {
+                println!("- [addr2domain] {:?} -> {:?}", str_address, domain_str);
+            }
+            Err(e) => {
+                println!(
+                    "Error while saving into db addr2domain: {:?} for domain_str = {:?} & address = {:?}",
+                    e, domain_str, str_address
+                );
+            }
+        }
     }
-
-    println!("- [addr2domain] {:?} -> {:?}", str_address, domain_str);
 }
 
 pub async fn domain_to_addr_update(
@@ -72,8 +76,13 @@ pub async fn domain_to_addr_update(
         return;
     }
 
-    let domain_str =
-        decode(types::FieldElement::from_bytes_be(&event_data[1].to_bytes()).unwrap()) + ".stark";
+    let domain_str = match types::FieldElement::from_bytes_be(&event_data[2].to_bytes()) {
+        Ok(bytes) => decode(bytes) + ".stark",
+        Err(e) => {
+            println!("Error decoding domain bytes: {:?}", e);
+            return;
+        }
+    };
     let str_address = FieldElement::to_hex(&event_data[2]);
 
     if !domain_str.is_empty() {
@@ -195,25 +204,6 @@ pub async fn on_starknet_id_update(
                 .unwrap_or_else(|e| {
                     println!("Error while saving into db purchased domain: {:?}", e);
                 });
-            // state
-            //     .db
-            //     .collection::<Domain>("domains")
-            //     .insert_one(
-            //         Domain {
-            //             domain: domain_str.clone(),
-            //             expiry: expiry_date.to_string(),
-            //             token_id: owner.to_string(),
-            //             creation_date: block_timestamp.to_string(),
-            //         },
-            //         None,
-            //     )
-            //     .await
-            //     .map(|_| {
-            //         println!("- [purchased] domain: {:?} id: {:?}", domain_str, owner);
-            //     })
-            //     .unwrap_or_else(|e| {
-            //         println!("Error while saving into db purchased domain: {:?}", e);
-            //     });
         }
         Err(e) => {
             println!("Error on_starknet_id_update: {:?}", e);
@@ -277,4 +267,89 @@ pub async fn domain_transfer(
         "domain transfer: {:?} {:?} -> {:?}",
         domain_str, prev_owner, new_owner
     );
+}
+
+pub async fn toggled_renewal(
+    _: &config::Config,
+    state: &Arc<AppState>,
+    event_data: &Vec<FieldElement>,
+) {
+    let domain = match types::FieldElement::from_bytes_be(&event_data[0].to_bytes()) {
+        Ok(bytes) => decode(bytes) + ".stark",
+        Err(e) => {
+            println!("Error decoding domain bytes: {:?}", e);
+            return;
+        }
+    };
+    let renewer_address = FieldElement::to_hex(&event_data[1]);
+    let value = BigUint::from_bytes_be(&event_data[2].to_bytes())
+        .to_i64()
+        .unwrap();
+    let auto_renewal_enabled = value != 0;
+
+    let collection = state.db.collection::<AutoRenewals>("auto_renewals");
+    let filter = doc! {
+        "domain": &domain,
+        "renewer_address": &renewer_address,
+    };
+    let update = doc! {
+        "$set": {
+            "auto_renewal_enabled": auto_renewal_enabled
+        }
+    };
+    let options = UpdateOptions::builder().upsert(true).build();
+    match collection.update_one(filter, update, options).await {
+        Ok(_) => {
+            println!(
+                "- [toggled_renewal] domain: {:?} renewer: {:?} value: {:?}",
+                domain, renewer_address, auto_renewal_enabled
+            );
+        }
+        Err(e) => {
+            println!("Error while saving into db renewed domain: {:?} for domain: {:?} and renewer: {:?}", e, domain, renewer_address);
+        }
+    }
+}
+
+pub async fn domain_renewed(
+    _: &config::Config,
+    state: &Arc<AppState>,
+    event_data: &Vec<FieldElement>,
+    block_timestamp: DateTime<Utc>,
+) {
+    let domain = match types::FieldElement::from_bytes_be(&event_data[0].to_bytes()) {
+        Ok(bytes) => decode(bytes) + ".stark",
+        Err(e) => {
+            println!("Error decoding domain bytes: {:?}", e);
+            return;
+        }
+    };
+    let renewer_address = FieldElement::to_hex(&event_data[1]);
+    let days = BigUint::from_bytes_be(&event_data[2].to_bytes())
+        .to_i64()
+        .unwrap();
+
+    let collection = state.db.collection::<RenewedDomains>("renewed_domains");
+    match collection
+        .insert_one(
+            RenewedDomains {
+                domain: domain.clone(),
+                renewer_address: renewer_address.clone(),
+                date: block_timestamp.to_string(),
+                days,
+            },
+            None,
+        )
+        .await
+    {
+        Ok(_) => {
+            println!(
+                "- [domain_renewed] domain: {:?} renewer: {:?} date: {:?}",
+                domain, renewer_address, block_timestamp
+            );
+        }
+        Err(e) => {
+            println!("Error while saving into db domain_renewed: {:?} for domain: {:?} and renewer: {:?}", e, domain, renewer_address);
+        }
+    }
 }

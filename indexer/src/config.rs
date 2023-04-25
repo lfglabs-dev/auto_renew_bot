@@ -20,8 +20,9 @@ pub_struct!(Apibara {
 });
 
 pub_struct!(Contract {
-    token: FieldElement,
-    recipient: FieldElement,
+    starknetid: FieldElement,
+    naming: FieldElement,
+    renewal: FieldElement,
 });
 
 pub_struct!(Database {

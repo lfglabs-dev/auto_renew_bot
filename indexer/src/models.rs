@@ -21,3 +21,19 @@ pub struct DomainRenewals {
     pub new_expiry: String,
     pub renewal_date: String,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AutoRenewals {
+    pub domain: String,
+    pub renewer_address: String,
+    pub last_renewal_date: String,
+    pub auto_renewal_enabled: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RenewedDomains {
+    pub domain: String,
+    pub renewer_address: String,
+    pub date: String,
+    pub days: i64,
+}

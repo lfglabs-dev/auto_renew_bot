@@ -4,7 +4,6 @@ use std::sync::Arc;
 use apibara_core::starknet::v1alpha2::{Block, Filter};
 use apibara_sdk::{ClientBuilder, Uri};
 use mongodb::{bson::doc, options::ClientOptions, Client};
-use tokio::time::{sleep, Duration};
 mod apibara;
 mod config;
 mod listeners;
@@ -36,9 +35,9 @@ async fn main() {
     }
 
     let apibara_conf = apibara::create_apibara_config(&conf);
-    let uri: Uri = conf.apibara.stream.parse().unwrap();
+    // let uri: Uri = conf.apibara.stream.parse().unwrap();
     let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-        .connect(uri)
+        .connect(Uri::from_static("http://0.0.0.0:7172"))
         .await
         .unwrap();
 

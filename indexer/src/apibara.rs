@@ -21,6 +21,17 @@ lazy_static! {
     pub static ref DOMAIN_TRANSFER: FieldElement =
         FieldElement::from_hex("0x8abcf1baae89ea5d4ea9baa068abfdf471eb2b8ed985f88579b0128d4a597f",)
             .unwrap();
+    pub static ref TOGGLED_RENEWAL: FieldElement =
+        FieldElement::from_hex("0xfd0e38e23f58cb4845305711691833c58ba21226c8171a6839b398946ec4cf",)
+            .unwrap();
+    pub static ref DOMAIN_RENEWED: FieldElement = FieldElement::from_hex(
+        "0x3dede05d90cefb3de02b2ed61662f01c661b9f79ed134167a95c718c76176bd",
+    )
+    .unwrap();
+    pub static ref VOTED: FieldElement = FieldElement::from_hex(
+        "0x1a99e229c0c327658e89d7662627165602af3cfa1201b7ca2f124b813866300",
+    )
+    .unwrap();
 }
 
 pub fn create_apibara_config(conf: &Config) -> Configuration<Filter> {
@@ -39,20 +50,32 @@ pub fn create_apibara_config(conf: &Config) -> Configuration<Filter> {
         .with_filter(|f: Filter| -> Filter {
             f.with_header(HeaderFilter::weak())
                 .add_event(|ev| {
-                    ev.with_from_address(conf.contract.recipient.clone())
+                    ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![STARKNET_ID_UPDATE.clone()])
                 })
                 .add_event(|ev| {
-                    ev.with_from_address(conf.contract.recipient.clone())
+                    ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![DOMAIN_TO_ADDRESS_UPDATE.clone()])
                 })
                 .add_event(|ev| {
-                    ev.with_from_address(conf.contract.recipient.clone())
+                    ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![ADDRESS_TO_DOMAIN_UPDATE.clone()])
                 })
                 .add_event(|ev| {
-                    ev.with_from_address(conf.contract.recipient.clone())
+                    ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![DOMAIN_TRANSFER.clone()])
+                })
+                .add_event(|ev| {
+                    ev.with_from_address(conf.contract.renewal.clone())
+                        .with_keys(vec![TOGGLED_RENEWAL.clone()])
+                })
+                .add_event(|ev| {
+                    ev.with_from_address(conf.contract.renewal.clone())
+                        .with_keys(vec![DOMAIN_RENEWED.clone()])
+                })
+                .add_event(|ev| {
+                    ev.with_from_address(conf.contract.renewal.clone())
+                        .with_keys(vec![VOTED.clone()])
                 })
         })
 }
