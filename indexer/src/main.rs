@@ -35,9 +35,9 @@ async fn main() {
     }
 
     let apibara_conf = apibara::create_apibara_config(&conf);
-    // let uri: Uri = conf.apibara.stream.parse().unwrap();
+    let uri: Uri = conf.apibara.stream.parse().unwrap();
     let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-        .connect(Uri::from_static("http://0.0.0.0:7172"))
+        .connect(uri)
         .await
         .unwrap();
 

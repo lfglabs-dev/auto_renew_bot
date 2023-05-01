@@ -23,6 +23,7 @@ pub_struct!(Contract {
     starknetid: FieldElement,
     naming: FieldElement,
     renewal: FieldElement,
+    erc20: FieldElement,
 });
 
 pub_struct!(Database {

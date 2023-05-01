@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::apibara::{
-    ADDRESS_TO_DOMAIN_UPDATE, DOMAIN_RENEWED, DOMAIN_TO_ADDRESS_UPDATE, DOMAIN_TRANSFER,
+    ADDRESS_TO_DOMAIN_UPDATE, APPROVAL, DOMAIN_TO_ADDRESS_UPDATE, DOMAIN_TRANSFER,
     STARKNET_ID_UPDATE, TOGGLED_RENEWAL,
 };
 use crate::config;
@@ -14,7 +14,6 @@ use apibara_core::{
 };
 use apibara_sdk::{DataMessage, DataStream};
 use chrono::{DateTime, Utc};
-use tokio::time::Duration;
 use tokio_stream::StreamExt;
 
 pub async fn process_data_stream(
@@ -22,35 +21,24 @@ pub async fn process_data_stream(
     conf: &config::Config,
     state: &Arc<AppState>,
 ) -> Result<()> {
-    loop {
-        match data_stream.try_next().await {
-            Ok(Some(message)) => match message {
-                DataMessage::Data {
-                    cursor: _,
-                    end_cursor: _,
-                    finality,
-                    batch,
-                } => {
-                    if finality != DataFinality::DataStatusFinalized {
-                        println!("shutting down");
-                        break;
-                    }
-
-                    for block in batch {
-                        process_block(&conf, &state, block).await?;
-                    }
+    while let Some(message) = data_stream.try_next().await.unwrap() {
+        match message {
+            DataMessage::Data {
+                cursor: _,
+                end_cursor: _,
+                finality,
+                batch,
+            } => {
+                // if finality != DataFinality::DataStatusFinalized {
+                //     println!("shutting down");
+                //     break;
+                // }
+                for block in batch {
+                    process_block(&conf, &state, block).await?;
                 }
-                DataMessage::Invalidate { cursor } => {
-                    panic!("chain reorganization detected: {cursor:?}");
-                }
-            },
-            Ok(None) => {
-                break;
             }
-            Err(e) => {
-                eprintln!("Error while processing data stream: {:?}", e);
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
+            DataMessage::Invalidate { cursor } => {
+                panic!("chain reorganization detected: {cursor:?}");
             }
         }
     }
@@ -76,8 +64,8 @@ async fn process_block(conf: &config::Config, state: &Arc<AppState>, block: Bloc
             listeners::domain_transfer(conf, state, &event.data).await;
         } else if key == &*TOGGLED_RENEWAL {
             listeners::toggled_renewal(conf, state, &event.data).await;
-        } else if key == &*DOMAIN_RENEWED {
-            listeners::domain_renewed(conf, state, &event.data, timestamp).await;
+        } else if key == &*APPROVAL {
+            listeners::approval_update(conf, state, &event.data).await;
         }
     }
 

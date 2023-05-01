@@ -24,12 +24,8 @@ lazy_static! {
     pub static ref TOGGLED_RENEWAL: FieldElement =
         FieldElement::from_hex("0xfd0e38e23f58cb4845305711691833c58ba21226c8171a6839b398946ec4cf",)
             .unwrap();
-    pub static ref DOMAIN_RENEWED: FieldElement = FieldElement::from_hex(
-        "0x3dede05d90cefb3de02b2ed61662f01c661b9f79ed134167a95c718c76176bd",
-    )
-    .unwrap();
-    pub static ref VOTED: FieldElement = FieldElement::from_hex(
-        "0x1a99e229c0c327658e89d7662627165602af3cfa1201b7ca2f124b813866300",
+    pub static ref APPROVAL: FieldElement = FieldElement::from_hex(
+        "0x134692B230B9E1FFA39098904722134159652B09C5BC41D88D6698779D228FF",
     )
     .unwrap();
 }
@@ -70,12 +66,8 @@ pub fn create_apibara_config(conf: &Config) -> Configuration<Filter> {
                         .with_keys(vec![TOGGLED_RENEWAL.clone()])
                 })
                 .add_event(|ev| {
-                    ev.with_from_address(conf.contract.renewal.clone())
-                        .with_keys(vec![DOMAIN_RENEWED.clone()])
-                })
-                .add_event(|ev| {
-                    ev.with_from_address(conf.contract.renewal.clone())
-                        .with_keys(vec![VOTED.clone()])
+                    ev.with_from_address(conf.contract.erc20.clone())
+                        .with_keys(vec![APPROVAL.clone()])
                 })
         })
 }

@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     config,
-    models::{AppState, AutoRenewals, Domain, DomainRenewals, RenewedDomains},
+    models::{AppState, Approval, AutoRenewals, Domain, DomainRenewals},
 };
 use apibara_core::starknet::v1alpha2::FieldElement;
-use bigdecimal::{num_bigint::BigUint, ToPrimitive};
+use bigdecimal::{num_bigint::BigUint, BigDecimal, ToPrimitive};
 use chrono::{DateTime, TimeZone, Utc};
 use mongodb::{
     bson::{doc, Bson},
@@ -76,7 +76,7 @@ pub async fn domain_to_addr_update(
         return;
     }
 
-    let domain_str = match types::FieldElement::from_bytes_be(&event_data[2].to_bytes()) {
+    let domain_str = match types::FieldElement::from_bytes_be(&event_data[1].to_bytes()) {
         Ok(bytes) => decode(bytes) + ".stark",
         Err(e) => {
             println!("Error decoding domain bytes: {:?}", e);
@@ -182,7 +182,6 @@ pub async fn on_starknet_id_update(
                         println!("Error while saving into db renewed domain: {:?}", e);
                     });
             } else {
-                // The domain field is None
                 println!("Domain field is None");
             }
         }
@@ -311,45 +310,45 @@ pub async fn toggled_renewal(
     }
 }
 
-pub async fn domain_renewed(
-    _: &config::Config,
+pub async fn approval_update(
+    config: &config::Config,
     state: &Arc<AppState>,
     event_data: &Vec<FieldElement>,
-    block_timestamp: DateTime<Utc>,
 ) {
-    let domain = match types::FieldElement::from_bytes_be(&event_data[0].to_bytes()) {
-        Ok(bytes) => decode(bytes) + ".stark",
-        Err(e) => {
-            println!("Error decoding domain bytes: {:?}", e);
-            return;
-        }
-    };
-    let renewer_address = FieldElement::to_hex(&event_data[1]);
-    let days = BigUint::from_bytes_be(&event_data[2].to_bytes())
-        .to_i64()
-        .unwrap();
-
-    let collection = state.db.collection::<RenewedDomains>("renewed_domains");
-    match collection
-        .insert_one(
-            RenewedDomains {
-                domain: domain.clone(),
-                renewer_address: renewer_address.clone(),
-                date: block_timestamp.to_string(),
-                days,
-            },
-            None,
-        )
-        .await
-    {
-        Ok(_) => {
-            println!(
-                "- [domain_renewed] domain: {:?} renewer: {:?} date: {:?}",
-                domain, renewer_address, block_timestamp
-            );
-        }
-        Err(e) => {
-            println!("Error while saving into db domain_renewed: {:?} for domain: {:?} and renewer: {:?}", e, domain, renewer_address);
+    let spender = FieldElement::to_hex(&event_data[1]);
+    let naming_contract = FieldElement::to_hex(&config.contract.naming);
+    if spender == naming_contract {
+        let renewer = FieldElement::to_hex(&event_data[0]);
+        let allowance =
+            BigDecimal::new(BigUint::from_bytes_be(&event_data[2].to_bytes()).into(), 18)
+                .to_string();
+        let approval_collection = state.db.collection::<Approval>("approvals");
+        let filter = doc! {
+            "renewer": &renewer,
+        };
+        let update = doc! {
+            "$set": {
+                "renewer": &renewer,
+                "value": &allowance,
+            }
+        };
+        let options = UpdateOptions::builder().upsert(true).build();
+        match approval_collection
+            .update_one(filter, update, options)
+            .await
+        {
+            Ok(_) => {
+                println!(
+                    "- [approval_update] renewer: {:?} -> value : {:?}",
+                    renewer, allowance
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "Error while saving into approval event into db : {:?} for renewer {:?} and value {:?}",
+                    e, renewer, allowance
+                );
+            }
         }
     }
 }

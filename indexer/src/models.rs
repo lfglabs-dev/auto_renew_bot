@@ -37,3 +37,9 @@ pub struct RenewedDomains {
     pub date: String,
     pub days: i64,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Approval {
+    pub renewer: String,
+    pub value: String,
+}
