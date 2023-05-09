@@ -8,7 +8,7 @@ use apibara_core::starknet::v1alpha2::FieldElement;
 use bigdecimal::{num_bigint::BigUint, BigDecimal, ToPrimitive};
 use chrono::{DateTime, TimeZone, Utc};
 use mongodb::{
-    bson::{doc, Bson},
+    bson::{doc, Bson, DateTime as BsonDateTime},
     options::{FindOneAndUpdateOptions, InsertOneOptions, UpdateOptions},
 };
 use starknet::{core::types, id::decode};
@@ -75,7 +75,6 @@ pub async fn domain_to_addr_update(
     if domain_len != &FieldElement::from_u64(1) {
         return;
     }
-
     let domain_str = match types::FieldElement::from_bytes_be(&event_data[1].to_bytes()) {
         Ok(bytes) => decode(bytes) + ".stark",
         Err(e) => {
@@ -153,19 +152,22 @@ pub async fn on_starknet_id_update(
     match existing {
         Ok(Some(existing)) => {
             if let Some(ref db_expiry) = existing.expiry {
-                let existing_expiry = Utc
-                    .datetime_from_str(&db_expiry, "%Y-%m-%d %H:%M:%S %Z")
-                    .unwrap()
-                    .timestamp();
+                // let existing_expiry = Utc
+                //     .datetime_from_str(&db_expiry, "%Y-%m-%d %H:%M:%S %Z")
+                //     .unwrap()
+                //     .timestamp();
+                let existing_expiry = db_expiry.timestamp_millis();
                 state
                     .db
                     .collection::<DomainRenewals>("domains_renewals")
                     .insert_one(
                         DomainRenewals {
                             domain: domain_str.clone(),
-                            prev_expiry: db_expiry.to_string(),
+                            prev_expiry: db_expiry.to_owned(),
                             new_expiry: expiry.to_string(),
-                            renewal_date: block_timestamp.to_string(),
+                            renewal_date: BsonDateTime::from_millis(
+                                block_timestamp.timestamp_millis(),
+                            ),
                         },
                         None,
                     )
@@ -189,9 +191,9 @@ pub async fn on_starknet_id_update(
             let collection = state.db.collection("domains");
             let document = doc! {
                 "domain": domain_str.clone(),
-                "expiry": expiry_date.to_string(),
+                "expiry": BsonDateTime::from_millis(expiry_date.timestamp_millis()),
                 "token_id": owner.to_string(),
-                "creation_date": block_timestamp.to_string(),
+                "creation_date": BsonDateTime::from_millis(block_timestamp.timestamp_millis()),
             };
             let options = InsertOneOptions::builder().build();
             collection
