@@ -1,7 +1,4 @@
-use mongodb::{
-    bson::{self, DateTime},
-    Database,
-};
+use mongodb::{bson::DateTime, Database};
 use serde::{Deserialize, Serialize};
 
 pub struct AppState {

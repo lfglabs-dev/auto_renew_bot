@@ -152,10 +152,6 @@ pub async fn on_starknet_id_update(
     match existing {
         Ok(Some(existing)) => {
             if let Some(ref db_expiry) = existing.expiry {
-                // let existing_expiry = Utc
-                //     .datetime_from_str(&db_expiry, "%Y-%m-%d %H:%M:%S %Z")
-                //     .unwrap()
-                //     .timestamp();
                 let existing_expiry = db_expiry.timestamp_millis();
                 state
                     .db

@@ -29,10 +29,10 @@ pub async fn process_data_stream(
                 finality,
                 batch,
             } => {
-                // if finality != DataFinality::DataStatusFinalized {
-                //     println!("shutting down");
-                //     break;
-                // }
+                if finality != DataFinality::DataStatusFinalized {
+                    println!("shutting down");
+                    break;
+                }
                 for block in batch {
                     process_block(&conf, &state, block).await?;
                 }
