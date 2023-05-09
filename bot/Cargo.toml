@@ -7,4 +7,13 @@ edition = "2021"
 
 [dependencies]
 starknet = { git = "https://github.com/Th0rgal/starknet-rs.git", branch = "feat/starknet-id" }
+mongodb = "2.1.0"
+bson = "2.0.0"
+chrono = "0.4"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0.152", features = ["derive"] }
+toml = "0.5.10"
+futures = "0.3"
+url = "2.3.1"
+bigdecimal = "0.3.0"
 
