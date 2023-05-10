@@ -42,12 +42,18 @@ pub_struct!(MyAccount {
     address: String,
 });
 
+pub_struct!(Discord {
+    token: String,
+    channel_id: u64,
+});
+
 pub_struct!(Config {
     apibara: Apibara,
     contract: Contract,
     database: Database,
     devnet_provider: DevnetProvider,
     account: MyAccount,
+    discord: Discord,
 });
 
 pub fn load() -> Config {
