@@ -5,6 +5,7 @@ use crate::apibara::{
     STARKNET_ID_UPDATE, TOGGLED_RENEWAL,
 };
 use crate::config;
+use crate::discord::log_error_and_send_to_discord;
 use crate::listeners;
 use crate::models::AppState;
 use anyhow::Result;
@@ -44,8 +45,17 @@ pub async fn process_data_stream(
                 finality,
                 batch,
             } => {
+                if conf.devnet_provider.is_devnet {
+                    println!("processing block");
+                    for block in batch.clone() {
+                        process_block(&conf, &state, block).await?;
+                        cursor_opt = Some(end_cursor.clone());
+                    }
+                }
+
                 // only store blocks that are finalized
-                if finality == DataFinality::DataStatusFinalized {
+                if !conf.devnet_provider.is_devnet && finality == DataFinality::DataStatusFinalized
+                {
                     for block in batch {
                         process_block(&conf, &state, block).await?;
                         cursor_opt = Some(end_cursor.clone());
@@ -53,8 +63,13 @@ pub async fn process_data_stream(
                 }
             }
             DataMessage::Invalidate { cursor } => {
+                log_error_and_send_to_discord(
+                    &conf,
+                    "[indexer][error]",
+                    &anyhow::anyhow!("Chain reorganization detected: {cursor:?}"),
+                )
+                .await;
                 panic!("chain reorganization detected: {cursor:?}");
-                // todo: log to dicsord
             }
         }
     }
@@ -69,17 +84,31 @@ async fn process_block(conf: &config::Config, state: &Arc<AppState>, block: Bloc
         let key = &event.keys[0];
 
         if key == &*ADDRESS_TO_DOMAIN_UPDATE {
-            listeners::addr_to_domain_update(conf, state, &event.data).await;
+            if let Err(e) = listeners::addr_to_domain_update(conf, state, &event.data).await {
+                println!("Error in addr_to_domain_update: {:?}", e);
+            };
         } else if key == &*DOMAIN_TO_ADDRESS_UPDATE {
-            listeners::domain_to_addr_update(conf, state, &event.data).await;
+            if let Err(e) = listeners::domain_to_addr_update(conf, state, &event.data).await {
+                println!("Error in domain_to_addr_update: {:?}", e);
+            }
         } else if key == &*STARKNET_ID_UPDATE {
-            listeners::on_starknet_id_update(conf, state, &event.data, timestamp).await;
+            if let Err(e) =
+                listeners::on_starknet_id_update(conf, state, &event.data, timestamp).await
+            {
+                println!("Error in on_starknet_id_update: {:?}", e);
+            }
         } else if key == &*DOMAIN_TRANSFER {
-            listeners::domain_transfer(conf, state, &event.data).await;
+            if let Err(e) = listeners::domain_transfer(conf, state, &event.data).await {
+                println!("Error in domain_transfer: {:?}", e);
+            }
         } else if key == &*TOGGLED_RENEWAL {
-            listeners::toggled_renewal(conf, state, &event.data).await;
+            if let Err(e) = listeners::toggled_renewal(conf, state, &event.data).await {
+                println!("Error in toggled_renewal: {:?}", e);
+            }
         } else if key == &*APPROVAL {
-            listeners::approval_update(conf, state, &event.data).await;
+            if let Err(e) = listeners::approval_update(conf, state, &event.data).await {
+                println!("Error in approval_update: {:?}", e);
+            }
         }
     }
 

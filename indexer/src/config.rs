@@ -31,10 +31,23 @@ pub_struct!(Database {
     connection_string: String,
 });
 
+pub_struct!(Discord {
+    token: String,
+    channel_id: u64,
+});
+
+pub_struct!(DevnetProvider {
+    is_devnet: bool,
+    gateway: String,
+    feeder_gateway: String,
+});
+
 pub_struct!(Config {
     apibara: Apibara,
     contract: Contract,
     database: Database,
+    discord: Discord,
+    devnet_provider: DevnetProvider,
 });
 
 pub fn load() -> Config {
