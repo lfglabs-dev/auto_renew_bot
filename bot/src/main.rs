@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use bot::{get_provider, log_domains_renewed, log_msg_and_send_to_discord, renew_domains};
+use bot::{get_provider, renew_domains};
 use bson::doc;
+use discord::{log_domains_renewed, log_error_and_send_to_discord, log_msg_and_send_to_discord};
 use mongodb::{options::ClientOptions, Client as mongoClient};
 use starknet::{
     accounts::SingleOwnerAccount,
@@ -10,10 +11,9 @@ use starknet::{
 };
 use tokio::time::sleep;
 
-use crate::bot::log_error_and_send_to_discord;
-
 mod bot;
 mod config;
+mod discord;
 mod models;
 
 #[tokio::main]
@@ -36,13 +36,13 @@ async fn main() {
     {
         log_error_and_send_to_discord(
             &conf,
-            "[Error]",
+            "[bot][error]",
             &anyhow::anyhow!("Unable to connect to database"),
         )
         .await;
         return;
     } else {
-        log_msg_and_send_to_discord(&conf, "[Database]", "connected").await;
+        log_msg_and_send_to_discord(&conf, "[bot][database]", "connected").await;
     }
 
     let provider = get_provider(&conf);
@@ -61,17 +61,17 @@ async fn main() {
                             match log_domains_renewed(&conf, domains).await {
                                 Ok(_) => {log_msg_and_send_to_discord(
                                     &conf,
-                                    "[Renewals]",
+                                    "[bot][renewals]",
                                     "All domains renewed successfully",
                                 )
                                 .await}
-                                Err(error) => log_error_and_send_to_discord(&conf,"[Error] An error occurred while logging domains renewed into Discord",  &error).await
+                                Err(error) => log_error_and_send_to_discord(&conf,"[bot][error] An error occurred while logging domains renewed into Discord",  &error).await
                             };
                         }
                         Err(e) => {
                             log_error_and_send_to_discord(
                                 &conf,
-                                "[Error] An error occurred while renewing domains",
+                                "[bot][error] An error occurred while renewing domains",
                                 &e,
                             )
                             .await;
@@ -79,14 +79,18 @@ async fn main() {
                         }
                     }
                 } else {
-                    log_msg_and_send_to_discord(&conf, "[Renewals]", "No domains to renew today")
-                        .await;
+                    log_msg_and_send_to_discord(
+                        &conf,
+                        "[bot][renewals]",
+                        "No domains to renew today",
+                    )
+                    .await;
                 }
             }
             Err(e) => {
                 log_error_and_send_to_discord(
                     &conf,
-                    "[Error] An error occurred while getting domains ready for renewal",
+                    "[bot][error] An error occurred while getting domains ready for renewal",
                     &e,
                 )
                 .await;
