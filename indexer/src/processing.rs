@@ -8,42 +8,56 @@ use crate::config;
 use crate::listeners;
 use crate::models::AppState;
 use anyhow::Result;
+use apibara_core::node::v1alpha2::Cursor;
 use apibara_core::{
     node::v1alpha2::DataFinality,
     starknet::v1alpha2::{Block, Filter},
 };
 use apibara_sdk::{DataMessage, DataStream};
 use chrono::{DateTime, Utc};
+use thiserror::Error;
 use tokio_stream::StreamExt;
+
+#[derive(Error, Debug)]
+pub enum ProcessingError {
+    #[error("Connection reset")]
+    CursorError(Option<Cursor>),
+}
 
 pub async fn process_data_stream(
     data_stream: &mut DataStream<Filter, Block>,
     conf: &config::Config,
     state: &Arc<AppState>,
 ) -> Result<()> {
-    while let Some(message) = data_stream.try_next().await.unwrap() {
+    let mut cursor_opt = None;
+    loop {
+        let Ok(expected_data) = data_stream.try_next().await else {
+            return Err(anyhow::anyhow!(ProcessingError::CursorError(cursor_opt)));
+        };
+        let Some(message) = expected_data else {
+            continue;
+        };
         match message {
             DataMessage::Data {
                 cursor: _,
-                end_cursor: _,
+                end_cursor,
                 finality,
                 batch,
             } => {
-                if finality != DataFinality::DataStatusFinalized {
-                    println!("shutting down");
-                    break;
-                }
-                for block in batch {
-                    process_block(&conf, &state, block).await?;
+                // only store blocks that are finalized
+                if finality == DataFinality::DataStatusFinalized {
+                    for block in batch {
+                        process_block(&conf, &state, block).await?;
+                        cursor_opt = Some(end_cursor.clone());
+                    }
                 }
             }
             DataMessage::Invalidate { cursor } => {
                 panic!("chain reorganization detected: {cursor:?}");
+                // todo: log to dicsord
             }
         }
     }
-
-    Ok(())
 }
 
 async fn process_block(conf: &config::Config, state: &Arc<AppState>, block: Block) -> Result<()> {
