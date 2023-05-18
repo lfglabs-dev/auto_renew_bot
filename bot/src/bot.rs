@@ -3,8 +3,9 @@ use std::{str::FromStr, sync::Arc};
 use anyhow::{anyhow, Context, Result};
 use bson::{doc, DateTime as BsonDateTime};
 use chrono::{Duration, Utc};
-use futures::stream::StreamExt;
+use futures::TryStreamExt;
 use mongodb::options::FindOptions;
+use mongodb::Collection;
 use starknet::accounts::Account;
 use starknet::{
     accounts::{Call, SingleOwnerAccount},
@@ -53,83 +54,95 @@ pub async fn get_domains_ready_for_renewal(
         )
         .await?;
 
-    let mut domains_ready: Vec<FieldElement> = Vec::new();
-    let mut renewer_ready: Vec<FieldElement> = Vec::new();
+    let all_domains = domain_cursor.try_collect::<Vec<_>>().await?;
+    let futures: Vec<_> = all_domains
+        .into_iter()
+        .map(|domain| process_domain(domain, &renewals, &approvals, &config))
+        .collect();
+    let results: Vec<_> = futures::future::try_join_all(futures)
+        .await?
+        .into_iter()
+        .flatten()
+        .collect();
+    let (domains_ready, renewer_ready): (Vec<_>, Vec<_>) = results.into_iter().unzip();
 
-    while let Some(domain) = domain_cursor.next().await {
-        let domain = domain?;
-        let renewal = renewals
-            .find_one(doc! { "domain": &domain.domain }, None)
-            .await?;
+    Ok((domains_ready, renewer_ready))
+}
 
-        if let Some(renewal) = renewal {
-            if renewal.auto_renewal_enabled {
-                let renewer_addr = FieldElement::from_str(&renewal.renewer_address)?;
-                // get allowance from db
-                let approval = approvals
-                    .find_one(doc! { "renewer": &renewal.renewer_address }, None)
-                    .await?;
-                let allowance = if let Some(approval) = approval {
-                    BigDecimal::from_str(&approval.value)?
-                } else {
-                    BigDecimal::zero()
-                };
+async fn process_domain(
+    domain: Domain,
+    renewals: &Collection<AutoRenewals>,
+    approvals: &Collection<Approval>,
+    config: &Config,
+) -> Result<Option<(FieldElement, FieldElement)>> {
+    let renewal = renewals
+        .find_one(doc! { "domain": &domain.domain }, None)
+        .await?;
 
-                // get renew price from contract
-                let provider = get_provider(&config);
-                let domain_name = domain
-                    .domain
-                    .strip_suffix(".stark")
-                    .unwrap_or(&domain.domain);
-                let domain_encoded = starknet::id::encode(domain_name)
-                    .map_err(|_| anyhow!("Failed to encode domain name"))
-                    .context("Error occurred while encoding domain name")?;
+    if let Some(renewal) = renewal {
+        if renewal.auto_renewal_enabled {
+            let renewer_addr = FieldElement::from_str(&renewal.renewer_address)?;
+            // get allowance from db
+            let approval = approvals
+                .find_one(doc! { "renewer": &renewal.renewer_address }, None)
+                .await?;
+            let allowance = if let Some(approval) = approval {
+                BigDecimal::from_str(&approval.value)?
+            } else {
+                BigDecimal::zero()
+            };
 
-                let call_result = provider
-                    .call_contract(
-                        CallFunction {
-                            contract_address: config.contract.pricing,
-                            entry_point_selector: selector!("compute_renew_price"),
-                            calldata: vec![
-                                domain_encoded,
-                                FieldElement::from_dec_str("60").unwrap(),
-                            ],
-                        },
-                        BlockId::Latest,
-                    )
-                    .await;
+            // get renew price from contract
+            let provider = get_provider(&config);
+            let domain_name = domain
+                .domain
+                .strip_suffix(".stark")
+                .unwrap_or(&domain.domain);
+            let domain_encoded = starknet::id::encode(domain_name)
+                .map_err(|_| anyhow!("Failed to encode domain name"))
+                .context("Error occurred while encoding domain name")?;
 
-                match call_result {
-                    Ok(result) => {
-                        let renew_price = FieldElement::to_big_decimal(&result.result[1], 18);
-                        if renew_price <= allowance {
-                            domains_ready.push(domain_encoded);
-                            renewer_ready.push(renewer_addr);
-                        } else {
-                            log_msg_and_send_to_discord(
-                                &config,
-                                "[Renewal]",
-                                &format!(
+            let call_result = provider
+                .call_contract(
+                    CallFunction {
+                        contract_address: config.contract.pricing,
+                        entry_point_selector: selector!("compute_renew_price"),
+                        calldata: vec![domain_encoded, FieldElement::from_dec_str("60").unwrap()],
+                    },
+                    BlockId::Latest,
+                )
+                .await;
+
+            match call_result {
+                Ok(result) => {
+                    let renew_price = FieldElement::to_big_decimal(&result.result[1], 18);
+                    if renew_price <= allowance {
+                        Ok(Some((domain_encoded, renewer_addr)))
+                    } else {
+                        log_msg_and_send_to_discord(
+                            &config,
+                            "[Renewal]",
+                            &format!(
                                 "Domain {} cannot be renewed because {} has not enough allowance",
                                 domain.domain, renewal.renewer_address
                             ),
-                            )
-                            .await;
-                        }
-                    }
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "Error while fetching renew priced for domain {:?} : {:?}",
-                            &domain.domain,
-                            e
-                        ));
+                        )
+                        .await;
+                        Ok(None)
                     }
                 }
+                Err(e) => Err(anyhow::anyhow!(
+                    "Error while fetching renew priced for domain {:?} : {:?}",
+                    &domain.domain,
+                    e
+                )),
             }
+        } else {
+            Ok(None)
         }
+    } else {
+        Ok(None)
     }
-
-    Ok((domains_ready, renewer_ready))
 }
 
 pub async fn renew_domains(

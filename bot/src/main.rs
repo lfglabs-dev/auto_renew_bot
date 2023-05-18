@@ -42,7 +42,7 @@ async fn main() {
         .await;
         return;
     } else {
-        log_msg_and_send_to_discord(&conf, "[bot][database]", "connected").await;
+        log_msg_and_send_to_discord(&conf, "[bot]", "connected to database").await;
     }
 
     let provider = get_provider(&conf);

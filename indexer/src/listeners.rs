@@ -19,7 +19,8 @@ pub async fn addr_to_domain_update(
     state: &Arc<AppState>,
     event_data: &Vec<FieldElement>,
 ) -> Result<()> {
-    let str_address = FieldElement::to_hex(&event_data[0]);
+    // let str_address = FieldElement::to_hex(&event_data[0]);
+    let str_address = BigUint::from_bytes_be(&event_data[0].to_bytes()).to_string();
     let domain_len = &event_data[1];
     if domain_len == &FieldElement::from_u64(1) {
         let domain_str = types::FieldElement::from_bytes_be(&event_data[2].to_bytes())
@@ -73,7 +74,8 @@ pub async fn domain_to_addr_update(
     let domain_str = types::FieldElement::from_bytes_be(&event_data[1].to_bytes())
         .map_err(|_| anyhow!("Error decoding domain bytes"))?;
     let domain_str = decode(domain_str) + ".stark";
-    let str_address = FieldElement::to_hex(&event_data[2]);
+    // let str_address = FieldElement::to_hex(&event_data[2]);
+    let str_address = BigUint::from_bytes_be(&event_data[2].to_bytes()).to_string();
 
     if !domain_str.is_empty() {
         state
@@ -263,7 +265,7 @@ pub async fn toggled_renewal(
         .map_err(|_| anyhow!("Error decoding domain bytes"))?;
     let domain = decode(domain) + ".stark";
 
-    let renewer_address = FieldElement::to_hex(&event_data[1]);
+    let renewer_address = BigUint::from_bytes_be(&event_data[1].to_bytes());
     let value = BigUint::from_bytes_be(&event_data[2].to_bytes())
         .to_i64()
         .ok_or_else(|| anyhow!("Failed to convert to i64"))?;
@@ -272,7 +274,7 @@ pub async fn toggled_renewal(
     let collection = state.db.collection::<AutoRenewals>("auto_renewals");
     let filter = doc! {
         "domain": &domain,
-        "renewer_address": &renewer_address,
+        "renewer_address": &renewer_address.to_string(),
     };
     let update = doc! {
         "$set": {
@@ -300,19 +302,19 @@ pub async fn approval_update(
     event_data: &Vec<FieldElement>,
 ) -> Result<()> {
     let spender = FieldElement::to_hex(&event_data[1]);
-    let naming_contract = FieldElement::to_hex(&config.contract.naming);
-    if spender == naming_contract {
-        let renewer = FieldElement::to_hex(&event_data[0]);
+    let renewal_contract = FieldElement::to_hex(&config.contract.renewal);
+    if spender == renewal_contract {
+        let renewer = BigUint::from_bytes_be(&event_data[0].to_bytes());
         let allowance =
             BigDecimal::new(BigUint::from_bytes_be(&event_data[2].to_bytes()).into(), 18)
                 .to_string();
         let approval_collection = state.db.collection::<Approval>("approvals");
         let filter = doc! {
-            "renewer": &renewer,
+            "renewer": &renewer.to_string(),
         };
         let update = doc! {
             "$set": {
-                "renewer": &renewer,
+                "renewer": &renewer.to_string(),
                 "value": &allowance,
             }
         };
