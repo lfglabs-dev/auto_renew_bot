@@ -259,7 +259,7 @@ pub async fn toggled_renewal(
     state: &Arc<AppState>,
     event_data: &Vec<FieldElement>,
 ) -> Result<()> {
-    let domain = types::FieldElement::from_bytes_be(&event_data[1].to_bytes())
+    let domain = types::FieldElement::from_bytes_be(&event_data[0].to_bytes())
         .map_err(|_| anyhow!("Error decoding domain bytes"))?;
     let domain = decode(domain) + ".stark";
 
