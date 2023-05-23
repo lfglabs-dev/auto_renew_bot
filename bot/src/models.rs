@@ -27,3 +27,12 @@ pub struct AutoRenewals {
     pub renewer_address: String,
     pub auto_renewal_enabled: bool,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DomainAggregateResult {
+    pub domain: String,
+    pub expiry: Option<DateTime>,
+    pub renewer_address: String,
+    pub auto_renewal_enabled: bool,
+    pub approval_value: String,
+}
