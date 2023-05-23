@@ -46,7 +46,6 @@ pub async fn process_data_stream(
                 batch,
             } => {
                 if conf.devnet_provider.is_devnet {
-                    println!("processing block");
                     for block in batch.clone() {
                         process_block(&conf, &state, block).await?;
                         cursor_opt = Some(end_cursor.clone());
