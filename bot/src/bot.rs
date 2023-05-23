@@ -116,7 +116,7 @@ async fn process_aggregate_result(
     let domain_name = result
         .domain
         .strip_suffix(".stark")
-        .unwrap_or(&result.domain);
+        .ok_or_else(|| anyhow::anyhow!("Invalid domain name: {:?}", result.domain))?;
     let domain_encoded = starknet::id::encode(domain_name)
         .map_err(|_| anyhow!("Failed to encode domain name"))
         .context("Error occurred while encoding domain name")?;
