@@ -3,10 +3,12 @@ use std::sync::Arc;
 
 use apibara_core::starknet::v1alpha2::{Block, Filter};
 use apibara_sdk::{ClientBuilder, Uri};
+use discord::{log_error_and_send_to_discord, log_msg_and_send_to_discord};
 use mongodb::{bson::doc, options::ClientOptions, Client};
-use tokio::time::{sleep, Duration};
+use processing::ProcessingError;
 mod apibara;
 mod config;
+mod discord;
 mod listeners;
 mod models;
 mod processing;
@@ -29,21 +31,45 @@ async fn main() {
         .await
         .is_err()
     {
-        println!("error: unable to connect to database");
+        log_error_and_send_to_discord(
+            &conf,
+            "[indexer][error]",
+            &anyhow::anyhow!("Unable to connect to indexer database"),
+        )
+        .await;
         return;
     } else {
-        println!("database: connected")
+        log_msg_and_send_to_discord(&conf, "[indexer]", "connected to database").await;
     }
 
-    let apibara_conf = apibara::create_apibara_config(&conf);
-    let uri: Uri = conf.apibara.stream.parse().unwrap();
-    let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-        .connect(uri)
-        .await
-        .unwrap();
+    let mut cursor_opt = None;
+    loop {
+        let apibara_conf = apibara::create_apibara_config(&conf);
+        let uri: Uri = conf.apibara.stream.parse().unwrap();
+        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
+            .connect(uri)
+            .await
+            .unwrap();
 
-    data_client.send(apibara_conf).await.unwrap();
-    processing::process_data_stream(&mut data_stream, &conf, &shared_state)
-        .await
-        .unwrap();
+        data_client.send(apibara_conf).await.unwrap();
+
+        match processing::process_data_stream(&mut data_stream, &conf, &shared_state).await {
+            Err(e) => {
+                if let Some(ProcessingError::CursorError(cursor_opt2)) =
+                    e.downcast_ref::<ProcessingError>()
+                {
+                    cursor_opt = cursor_opt2.clone();
+                    log_error_and_send_to_discord(
+                        &conf,
+                        "[indexer][error]",
+                        &anyhow::anyhow!("connection reset, restarting from last cursor"),
+                    )
+                    .await;
+                }
+            }
+            Ok(_) => {
+                break;
+            }
+        }
+    }
 }

@@ -1,5 +1,5 @@
-use apibara_core::starknet::v1alpha2::FieldElement;
 use serde::Deserialize;
+use starknet::core::types::FieldElement;
 use std::env;
 use std::fs;
 
@@ -11,7 +11,6 @@ macro_rules! pub_struct {
         }
     }
 }
-
 pub_struct!(Apibara {
     finality: String,
     starting_block: u64,
@@ -24,6 +23,7 @@ pub_struct!(Contract {
     naming: FieldElement,
     renewal: FieldElement,
     erc20: FieldElement,
+    pricing: FieldElement,
 });
 
 pub_struct!(Database {
@@ -31,23 +31,30 @@ pub_struct!(Database {
     connection_string: String,
 });
 
+pub_struct!(DevnetProvider {
+    is_devnet: bool,
+    is_testnet: bool,
+    gateway: String,
+    feeder_gateway: String,
+});
+
+pub_struct!(MyAccount {
+    private_key: String,
+    address: String,
+});
+
 pub_struct!(Discord {
     token: String,
     channel_id: u64,
-});
-
-pub_struct!(DevnetProvider {
-    is_devnet: bool,
-    gateway: String,
-    feeder_gateway: String,
 });
 
 pub_struct!(Config {
     apibara: Apibara,
     contract: Contract,
     database: Database,
-    discord: Discord,
     devnet_provider: DevnetProvider,
+    account: MyAccount,
+    discord: Discord,
 });
 
 pub fn load() -> Config {
