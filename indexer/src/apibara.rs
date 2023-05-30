@@ -43,31 +43,34 @@ pub fn create_apibara_config(conf: &Config) -> Configuration<Filter> {
         })
         .with_batch_size(conf.apibara.batch_size)
         .with_starting_block(conf.apibara.starting_block)
-        .with_filter(|f: Filter| -> Filter {
-            f.with_header(HeaderFilter::weak())
-                .add_event(|ev| {
+        .with_filter(|mut f: Filter| -> Filter {
+            {
+                f.with_header(HeaderFilter::weak());
+                f.add_event(|ev| {
                     ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![STARKNET_ID_UPDATE.clone()])
-                })
-                .add_event(|ev| {
+                });
+                f.add_event(|ev| {
                     ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![DOMAIN_TO_ADDRESS_UPDATE.clone()])
-                })
-                .add_event(|ev| {
+                });
+                f.add_event(|ev| {
                     ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![ADDRESS_TO_DOMAIN_UPDATE.clone()])
-                })
-                .add_event(|ev| {
+                });
+                f.add_event(|ev| {
                     ev.with_from_address(conf.contract.naming.clone())
                         .with_keys(vec![DOMAIN_TRANSFER.clone()])
-                })
-                .add_event(|ev| {
+                });
+                f.add_event(|ev| {
                     ev.with_from_address(conf.contract.renewal.clone())
                         .with_keys(vec![TOGGLED_RENEWAL.clone()])
-                })
-                .add_event(|ev| {
+                });
+                f.add_event(|ev| {
                     ev.with_from_address(conf.contract.erc20.clone())
                         .with_keys(vec![APPROVAL.clone()])
-                })
+                });
+            }
+            f
         })
 }
