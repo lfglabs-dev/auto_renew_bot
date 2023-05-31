@@ -44,12 +44,15 @@ async fn main() {
 
     let mut cursor_opt = None;
     loop {
+        // Lookup for the authenticaiton key in `DNA_KEY`, if any.
+        let client_builder = if let Ok(token) = std::env::var("DNA_KEY") {
+            ClientBuilder::<Filter, Block>::default().with_bearer_token(token)
+        } else {
+            ClientBuilder::<Filter, Block>::default()
+        };
         let apibara_conf = apibara::create_apibara_config(&conf);
         let uri: Uri = conf.apibara.stream.parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .connect(uri)
-            .await
-            .unwrap();
+        let (mut data_stream, data_client) = client_builder.connect(uri).await.unwrap();
 
         data_client.send(apibara_conf).await.unwrap();
 
