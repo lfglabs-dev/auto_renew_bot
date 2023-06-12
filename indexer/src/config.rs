@@ -17,6 +17,7 @@ pub_struct!(Apibara {
     starting_block: u64,
     batch_size: u64,
     stream: String,
+    token: String,
 });
 
 pub_struct!(Contract {
