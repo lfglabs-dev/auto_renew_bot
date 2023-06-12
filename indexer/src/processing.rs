@@ -70,6 +70,7 @@ pub async fn process_data_stream(
                 .await;
                 panic!("chain reorganization detected: {cursor:?}");
             }
+            DataMessage::Heartbeat => {}
         }
     }
 }
