@@ -11,22 +11,22 @@ services:
     ports:
       - 0.0.0.0:27017:27017
 
-  # indexer:
-  #   container_name: indexer
-  #   build: 
-  #     context: .
-  #     dockerfile: ./indexer/Dockerfile
-  #   command: ./target/release/indexer
-  #   restart: always
-  #   links:
-  #     - mongo
+  indexer:
+    container_name: indexer
+    build: 
+      context: .
+      dockerfile: ./indexer/Dockerfile
+    command: ./target/release/indexer
+    restart: always
+    links:
+      - mongo
 
-  # bot:
-  #   container_name: bot
-  #   build: 
-  #     context: .
-  #     dockerfile: ./bot/Dockerfile
-  #   command: ./target/release/bot
-  #   restart: always
-  #   links:
-  #     - mongo
+  bot:
+    container_name: bot
+    build: 
+      context: .
+      dockerfile: ./bot/Dockerfile
+    command: ./target/release/bot
+    restart: no
+    links:
+      - mongo
