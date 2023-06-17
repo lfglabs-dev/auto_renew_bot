@@ -39,8 +39,8 @@ pub_struct!(DevnetProvider {
 });
 
 pub_struct!(MyAccount {
-    private_key: String,
-    address: String,
+    private_key: FieldElement,
+    address: FieldElement,
 });
 
 pub_struct!(Discord {
