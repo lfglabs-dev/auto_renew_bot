@@ -29,3 +29,6 @@ address = "0x123"
 [discord]
 token = "xxxxxx"
 channel_id = 123456789
+
+[renewals]
+delay = 86400 # 24 hours

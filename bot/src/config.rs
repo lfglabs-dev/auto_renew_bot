@@ -48,6 +48,10 @@ pub_struct!(Discord {
     channel_id: u64,
 });
 
+pub_struct!(Renewals {
+    delay: u64,
+});
+
 pub_struct!(Config {
     apibara: Apibara,
     contract: Contract,
@@ -55,6 +59,7 @@ pub_struct!(Config {
     devnet_provider: DevnetProvider,
     account: MyAccount,
     discord: Discord,
+    renewals : Renewals,
 });
 
 pub fn load() -> Config {

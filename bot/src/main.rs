@@ -97,6 +97,6 @@ async fn main() {
         }
 
         // Sleep for 24 hours
-        sleep(std::time::Duration::from_secs(86400)).await;
+        sleep(std::time::Duration::from_secs(conf.renewals.delay)).await;
     }
 }
