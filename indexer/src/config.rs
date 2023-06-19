@@ -39,6 +39,7 @@ pub_struct!(Discord {
 
 pub_struct!(DevnetProvider {
     is_devnet: bool,
+    is_testnet: bool,
     gateway: String,
     feeder_gateway: String,
 });

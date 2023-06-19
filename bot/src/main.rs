@@ -46,11 +46,9 @@ async fn main() {
     }
 
     let provider = get_provider(&conf);
-    let signer = LocalWallet::from(SigningKey::from_secret_scalar(
-        FieldElement::from_hex_be(&conf.account.private_key).unwrap(),
-    ));
-    let address = FieldElement::from_hex_be(&conf.account.address).unwrap();
-    let account = SingleOwnerAccount::new(provider, signer, address, chain_id::TESTNET);
+    let signer = LocalWallet::from(SigningKey::from_secret_scalar(conf.account.private_key));
+    let account =
+        SingleOwnerAccount::new(provider, signer, conf.account.address, chain_id::TESTNET);
     println!("[bot] started");
     loop {
         match bot::get_domains_ready_for_renewal(&conf, &shared_state).await {
@@ -99,6 +97,6 @@ async fn main() {
         }
 
         // Sleep for 24 hours
-        sleep(std::time::Duration::from_secs(86400)).await;
+        sleep(std::time::Duration::from_secs(conf.renewals.delay)).await;
     }
 }

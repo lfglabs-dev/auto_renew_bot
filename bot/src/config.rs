@@ -39,13 +39,17 @@ pub_struct!(DevnetProvider {
 });
 
 pub_struct!(MyAccount {
-    private_key: String,
-    address: String,
+    private_key: FieldElement,
+    address: FieldElement,
 });
 
 pub_struct!(Discord {
     token: String,
     channel_id: u64,
+});
+
+pub_struct!(Renewals {
+    delay: u64,
 });
 
 pub_struct!(Config {
@@ -55,6 +59,7 @@ pub_struct!(Config {
     devnet_provider: DevnetProvider,
     account: MyAccount,
     discord: Discord,
+    renewals : Renewals,
 });
 
 pub fn load() -> Config {
