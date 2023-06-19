@@ -51,10 +51,11 @@ async fn main() {
     ));
     let address = FieldElement::from_hex_be(&conf.account.address).unwrap();
     let account = SingleOwnerAccount::new(provider, signer, address, chain_id::TESTNET);
-
+    println!("[bot] started");
     loop {
         match bot::get_domains_ready_for_renewal(&conf, &shared_state).await {
             Ok(domains) => {
+                println!("[indexer] checking domains to renew today");
                 if !domains.0.is_empty() && !domains.1.is_empty() {
                     match renew_domains(&conf, &account, domains.clone()).await {
                         Ok(_) => {

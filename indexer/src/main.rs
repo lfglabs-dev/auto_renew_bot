@@ -53,7 +53,7 @@ async fn main() {
             .unwrap();
 
         data_client.send(apibara_conf).await.unwrap();
-
+        println!("[indexer] started");
         match processing::process_data_stream(&mut data_stream, &conf, &shared_state).await {
             Err(e) => {
                 if let Some(ProcessingError::CursorError(cursor_opt2)) =
