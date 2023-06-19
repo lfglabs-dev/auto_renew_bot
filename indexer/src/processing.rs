@@ -50,14 +50,23 @@ pub async fn process_data_stream(
                         process_block(&conf, &state, block).await?;
                         cursor_opt = Some(end_cursor.clone());
                     }
-                }
-
-                // only store blocks that are finalized
-                if !conf.devnet_provider.is_devnet && finality == DataFinality::DataStatusFinalized
-                {
-                    for block in batch {
-                        process_block(&conf, &state, block).await?;
-                        cursor_opt = Some(end_cursor.clone());
+                } else {
+                    // on testnet store blocks that are accepted
+                    if conf.devnet_provider.is_testnet
+                        && finality == DataFinality::DataStatusAccepted
+                    {
+                        for block in batch {
+                            process_block(&conf, &state, block).await?;
+                            cursor_opt = Some(end_cursor.clone());
+                        }
+                    // only store blocks that are finalized
+                    } else if !conf.devnet_provider.is_testnet
+                        && finality == DataFinality::DataStatusFinalized
+                    {
+                        for block in batch {
+                            process_block(&conf, &state, block).await?;
+                            cursor_opt = Some(end_cursor.clone());
+                        }
                     }
                 }
             }
