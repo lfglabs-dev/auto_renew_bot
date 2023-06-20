@@ -5,8 +5,9 @@ use bson::doc;
 use discord::{log_domains_renewed, log_error_and_send_to_discord, log_msg_and_send_to_discord};
 use mongodb::{options::ClientOptions, Client as mongoClient};
 use starknet::{
-    accounts::SingleOwnerAccount,
+    accounts::{Account, Call, SingleOwnerAccount},
     core::{chain_id, types::FieldElement},
+    macros::selector,
     signers::{LocalWallet, SigningKey},
 };
 use tokio::time::sleep;

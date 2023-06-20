@@ -169,6 +169,9 @@ pub async fn renew_domains(
     calldata.push(FieldElement::from_dec_str(&domains.1.len().to_string()).unwrap());
     calldata.extend_from_slice(&domains.1);
 
+    println!("Renewing domains with calldata: {:?}", calldata);
+    println!("contract addr renewal: {:?}", config.contract.renewal);
+
     let result = account
         .execute(vec![Call {
             to: config.contract.renewal,
@@ -177,7 +180,7 @@ pub async fn renew_domains(
         }])
         .send()
         .await;
-
+    println!("batch_renew execute result : {:?}", result);
     match result {
         Ok(_) => Ok(()),
         Err(e) => {
