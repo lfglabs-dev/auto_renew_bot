@@ -56,6 +56,17 @@ async fn main() {
             Ok(domains) => {
                 println!("[indexer] checking domains to renew today");
                 if !domains.0.is_empty() && !domains.1.is_empty() {
+                    // discord logs added
+                    match log_domains_renewed(&conf, domains.clone()).await {
+                        Ok(_) => {log_msg_and_send_to_discord(
+                            &conf,
+                            "[bot][renewals]",
+                            "Domains to renew :",
+                        )
+                        .await}
+                        Err(error) => log_error_and_send_to_discord(&conf,"[bot][error] An error occurred while logging domains to be renewed into Discord",  &error).await
+                    };
+                    // end discord logs
                     match renew_domains(&conf, &account, domains.clone()).await {
                         Ok(_) => {
                             match log_domains_renewed(&conf, domains).await {
