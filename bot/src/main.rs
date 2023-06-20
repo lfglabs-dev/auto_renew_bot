@@ -1,13 +1,12 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use bot::{get_provider, renew_domains};
 use bson::doc;
 use discord::{log_domains_renewed, log_error_and_send_to_discord, log_msg_and_send_to_discord};
 use mongodb::{options::ClientOptions, Client as mongoClient};
 use starknet::{
-    accounts::{Account, Call, SingleOwnerAccount},
-    core::{chain_id, types::FieldElement},
-    macros::selector,
+    accounts::SingleOwnerAccount,
+    core::chain_id,
     signers::{LocalWallet, SigningKey},
 };
 use tokio::time::sleep;
