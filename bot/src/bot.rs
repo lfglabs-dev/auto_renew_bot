@@ -163,6 +163,37 @@ pub async fn renew_domains(
     account: &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>,
     domains: (Vec<FieldElement>, Vec<FieldElement>),
 ) -> Result<()> {
+    // If we have more than 400 domains to renew we make multiple transactions to avoid hitting the 2M steps limit
+    while !domains.0.is_empty() && !domains.1.is_empty() {
+        let mut domains = domains.clone();
+        let size = domains.0.len().min(400);
+        let domains_to_renew: Vec<FieldElement> = domains.0.drain(0..size).collect();
+        let renewers = domains.1.drain(0..size).collect();
+
+        match send_transaction(config, account, (domains_to_renew.clone(), renewers)).await {
+            Ok(_) => (),
+            Err(e) => {
+                log_msg_and_send_to_discord(
+                    &config,
+                    "[Renewal]",
+                    &format!(
+                        "Error while renewing domains: {:?} for domains: {:?}",
+                        e, domains_to_renew
+                    ),
+                )
+                .await;
+                return Err(e);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn send_transaction(
+    config: &Config,
+    account: &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>,
+    domains: (Vec<FieldElement>, Vec<FieldElement>),
+) -> Result<()> {
     let mut calldata: Vec<FieldElement> = Vec::new();
     calldata.push(FieldElement::from_dec_str(&domains.0.len().to_string()).unwrap());
     calldata.extend_from_slice(&domains.0);
