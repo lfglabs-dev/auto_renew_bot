@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::apibara::{
     ADDRESS_TO_DOMAIN_UPDATE, APPROVAL, DOMAIN_TO_ADDRESS_UPDATE, DOMAIN_TRANSFER,
@@ -29,6 +29,7 @@ pub async fn process_data_stream(
     data_stream: &mut DataStream<Filter, Block>,
     conf: &config::Config,
     state: &Arc<AppState>,
+    shared_order_key: &Arc<Mutex<Option<String>>>,
 ) -> Result<()> {
     let mut cursor_opt = None;
     loop {
@@ -45,6 +46,10 @@ pub async fn process_data_stream(
                 finality,
                 batch,
             } => {
+                {
+                    let mut order_key = shared_order_key.lock().unwrap();
+                    *order_key = Some(end_cursor.order_key.clone().to_string());
+                }
                 if conf.devnet_provider.is_devnet {
                     for block in batch.clone() {
                         process_block(&conf, &state, block).await?;
