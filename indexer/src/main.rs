@@ -1,5 +1,8 @@
 extern crate lazy_static;
-use std::sync::Arc;
+use std::{
+    net::Ipv4Addr,
+    sync::{Arc, Mutex},
+};
 
 use apibara_core::starknet::v1alpha2::{Block, Filter};
 use apibara_sdk::{ClientBuilder, Uri};
@@ -9,6 +12,7 @@ use processing::ProcessingError;
 mod apibara;
 mod config;
 mod discord;
+mod endpoints;
 mod listeners;
 mod models;
 mod processing;
@@ -25,6 +29,9 @@ async fn main() {
             .unwrap()
             .database(&conf.database.name),
     });
+
+    let shared_order_key: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None)); // assuming the order_key is Option<String>
+
     if shared_state
         .db
         .run_command(doc! {"ping": 1}, None)
@@ -42,35 +49,50 @@ async fn main() {
         log_msg_and_send_to_discord(&conf, "[indexer]", "connected to database").await;
     }
 
-    let mut cursor_opt = None;
-    loop {
-        let apibara_conf = apibara::create_apibara_config(&conf);
-        let uri: Uri = conf.apibara.stream.parse().unwrap();
-        let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
-            .with_bearer_token(conf.apibara.token.clone())
-            .connect(uri)
-            .await
-            .unwrap();
+    let server = warp::serve(endpoints::is_ready::status_route(shared_order_key.clone()))
+        .run((Ipv4Addr::new(0, 0, 0, 0), conf.indexer_server.port));
 
-        data_client.send(apibara_conf).await.unwrap();
-        println!("[indexer] started");
-        match processing::process_data_stream(&mut data_stream, &conf, &shared_state).await {
-            Err(e) => {
-                if let Some(ProcessingError::CursorError(cursor_opt2)) =
-                    e.downcast_ref::<ProcessingError>()
+    tokio::select! {
+        _ = async {
+            let mut cursor_opt = None;
+            loop {
+                let apibara_conf = apibara::create_apibara_config(&conf);
+                let uri: Uri = conf.apibara.stream.parse().unwrap();
+                let (mut data_stream, data_client) = ClientBuilder::<Filter, Block>::default()
+                    .with_bearer_token(conf.apibara.token.clone())
+                    .connect(uri)
+                    .await
+                    .unwrap();
+
+                data_client.send(apibara_conf).await.unwrap();
+                println!("[indexer] started");
+                match processing::process_data_stream(
+                    &mut data_stream,
+                    &conf,
+                    &shared_state,
+                    &shared_order_key,
+                )
+                .await
                 {
-                    cursor_opt = cursor_opt2.clone();
-                    log_error_and_send_to_discord(
-                        &conf,
-                        "[indexer][error]",
-                        &anyhow::anyhow!("connection reset, restarting from last cursor"),
-                    )
-                    .await;
+                    Err(e) => {
+                        if let Some(ProcessingError::CursorError(cursor_opt2)) =
+                            e.downcast_ref::<ProcessingError>()
+                        {
+                            cursor_opt = cursor_opt2.clone();
+                            log_error_and_send_to_discord(
+                                &conf,
+                                "[indexer][error]",
+                                &anyhow::anyhow!("connection reset, restarting from last cursor"),
+                            )
+                            .await;
+                        }
+                    }
+                    Ok(_) => {
+                        break;
+                    }
                 }
             }
-            Ok(_) => {
-                break;
-            }
-        }
+        } => {}
+        _ = server => {}
     }
 }

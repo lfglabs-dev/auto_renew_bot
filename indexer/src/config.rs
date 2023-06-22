@@ -4,15 +4,15 @@ use std::env;
 use std::fs;
 
 macro_rules! pub_struct {
-    ($name:ident {$($field:ident: $t:ty,)*}) => {
-        #[derive(Deserialize)]
+    ($($derive:path),*; $name:ident {$($field:ident: $t:ty),* $(,)?}) => {
+        #[derive($($derive),*)]
         pub struct $name {
             $(pub $field: $t),*
         }
     }
 }
 
-pub_struct!(Apibara {
+pub_struct!(Clone, Deserialize; Apibara {
     finality: String,
     starting_block: u64,
     batch_size: u64,
@@ -20,36 +20,39 @@ pub_struct!(Apibara {
     token: String,
 });
 
-pub_struct!(Contract {
+pub_struct!(Clone, Deserialize; Contract {
     starknetid: FieldElement,
     naming: FieldElement,
     renewal: FieldElement,
     erc20: FieldElement,
 });
 
-pub_struct!(Database {
+pub_struct!(Clone, Deserialize; Database {
     name: String,
     connection_string: String,
 });
 
-pub_struct!(Discord {
+pub_struct!(Clone, Deserialize; Discord {
     token: String,
     channel_id: u64,
 });
 
-pub_struct!(DevnetProvider {
+pub_struct!(Clone, Deserialize; DevnetProvider {
     is_devnet: bool,
     is_testnet: bool,
     gateway: String,
     feeder_gateway: String,
 });
 
-pub_struct!(Config {
+pub_struct!(Clone, Deserialize; IndexerServer { port: u16, });
+
+pub_struct!(Clone, Deserialize; Config {
     apibara: Apibara,
     contract: Contract,
     database: Database,
     discord: Discord,
     devnet_provider: DevnetProvider,
+    indexer_server: IndexerServer,
 });
 
 pub fn load() -> Config {
