@@ -20,6 +20,8 @@ services:
     restart: always
     links:
       - mongo
+    ports:
+    - 8090:8090
 
   bot:
     container_name: bot
@@ -29,4 +31,5 @@ services:
     command: ./target/release/bot
     restart: "no"
     links:
+      - indexer
       - mongo
