@@ -174,7 +174,7 @@ pub async fn renew_domains(
             Ok(_) => {
                 log_msg_and_send_to_discord(
                     &config,
-                    "[Renewal]",
+                    "[bot][renew_domains]",
                     &format!("Successfully renewed domains: {:?}", domains_to_renew),
                 )
                 .await
@@ -182,7 +182,7 @@ pub async fn renew_domains(
             Err(e) => {
                 log_msg_and_send_to_discord(
                     &config,
-                    "[Renewal]",
+                    "[bot][renew_domains]",
                     &format!(
                         "Error while renewing domains: {:?} for domains: {:?}",
                         e, domains_to_renew
