@@ -171,7 +171,14 @@ pub async fn renew_domains(
         let renewers = domains.1.drain(0..size).collect();
 
         match send_transaction(config, account, (domains_to_renew.clone(), renewers)).await {
-            Ok(_) => (),
+            Ok(_) => {
+                log_msg_and_send_to_discord(
+                    &config,
+                    "[Renewal]",
+                    &format!("Successfully renewed domains: {:?}", domains_to_renew),
+                )
+                .await
+            }
             Err(e) => {
                 log_msg_and_send_to_discord(
                     &config,
