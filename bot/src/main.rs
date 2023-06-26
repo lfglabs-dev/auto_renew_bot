@@ -113,7 +113,11 @@ async fn main() {
                                     &e,
                                 )
                                 .await;
-                                break;
+                                if e.to_string().contains("request rate limited") {
+                                    continue;
+                                } else {
+                                    break;
+                                }
                             }
                         }
                     } else {
