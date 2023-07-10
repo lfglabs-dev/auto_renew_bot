@@ -75,16 +75,16 @@ async fn main() {
                 .await
                 {
                     Err(e) => {
+                        log_error_and_send_to_discord(
+                            &conf,
+                            "[indexer][error]",
+                            &anyhow::anyhow!(format!("Error while processing data stream: {:?}", e)),
+                        )
+                        .await;
                         if let Some(ProcessingError::CursorError(cursor_opt2)) =
                             e.downcast_ref::<ProcessingError>()
                         {
                             cursor_opt = cursor_opt2.clone();
-                            log_error_and_send_to_discord(
-                                &conf,
-                                "[indexer][error]",
-                                &anyhow::anyhow!("connection reset, restarting from last cursor"),
-                            )
-                            .await;
                         }
                     }
                     Ok(_) => {
