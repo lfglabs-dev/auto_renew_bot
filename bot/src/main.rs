@@ -54,6 +54,7 @@ async fn main() {
     let mut need_to_check_status = true;
     loop {
         if need_to_check_status {
+            println!("[bot] Checking indexer status");
             match indexer_status::get_status_from_endpoint(&conf).await {
                 Ok(block) => {
                     println!("Block: {}", block);
@@ -90,6 +91,7 @@ async fn main() {
                 }
             }
         } else {
+            println!("[bot] Checking domains to renew");
             match bot::get_domains_ready_for_renewal(&conf, &shared_state).await {
                 Ok(domains) => {
                     println!("[indexer] checking domains to renew today");
