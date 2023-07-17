@@ -81,20 +81,8 @@ pub async fn process_data_stream(
                             pending_received = false;
                         }
                         for block in batch {
-                            process_block(&conf, &state, block.clone(), order_key).await?;
+                            process_block(&conf, &state, block, order_key).await?;
                             cursor_opt = Some(end_cursor.clone());
-
-                            match block.header {
-                                Some(header) => {
-                                    println!(
-                                        "Processing block: {:?} with finality {:?}",
-                                        header.block_number, finality
-                                    );
-                                }
-                                None => {
-                                    continue;
-                                }
-                            };
                         }
                     }
                 }
