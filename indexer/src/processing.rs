@@ -60,30 +60,17 @@ pub async fn process_data_stream(
                         cursor_opt = Some(end_cursor.clone());
                     }
                 } else {
-                    // on testnet store blocks that are accepted
-                    if conf.devnet_provider.is_testnet
-                        && finality == DataFinality::DataStatusAccepted
-                    {
-                        for block in batch {
-                            process_block(&conf, &state, block, order_key).await?;
-                            cursor_opt = Some(end_cursor.clone());
-                        }
-                    // only store blocks that are finalized
-                    } else if !conf.devnet_provider.is_testnet
-                    // && finality == DataFinality::DataStatusFinalized
-                    {
-                        if finality == DataFinality::DataStatusPending {
-                            invalidate(state, cursor.clone()).await;
-                            pending_received = true;
-                        }
-                        if finality == DataFinality::DataStatusAccepted && pending_received {
-                            invalidate(state, cursor).await;
-                            pending_received = false;
-                        }
-                        for block in batch {
-                            process_block(&conf, &state, block, order_key).await?;
-                            cursor_opt = Some(end_cursor.clone());
-                        }
+                    if finality == DataFinality::DataStatusPending {
+                        invalidate(state, cursor.clone()).await;
+                        pending_received = true;
+                    }
+                    if finality == DataFinality::DataStatusAccepted && pending_received {
+                        invalidate(state, cursor).await;
+                        pending_received = false;
+                    }
+                    for block in batch {
+                        process_block(&conf, &state, block, order_key).await?;
+                        cursor_opt = Some(end_cursor.clone());
                     }
                 }
             }
