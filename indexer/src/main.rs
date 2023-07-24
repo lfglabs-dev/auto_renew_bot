@@ -10,6 +10,7 @@ use discord::{log_error_and_send_to_discord, log_msg_and_send_to_discord};
 use mongodb::{bson::doc, options::ClientOptions, Client};
 use processing::ProcessingError;
 mod apibara;
+mod apibara_utils;
 mod config;
 mod discord;
 mod endpoints;
