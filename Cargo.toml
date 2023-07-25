@@ -1,6 +1,3 @@
 [workspace]
 
-members = [
-    "indexer",
-    "bot",
-]
+members = ["bot"]
