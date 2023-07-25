@@ -13,10 +13,10 @@ services:
 
   indexer:
     container_name: indexer
-    build: 
-      context: .
-      dockerfile: ./indexer/Dockerfile
-    command: ./target/release/indexer
+    build:
+      context: ./indexer
+      dockerfile: Dockerfile
+    command: python -u indexer
     restart: always
     links:
       - mongo
