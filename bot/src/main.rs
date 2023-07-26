@@ -94,8 +94,8 @@ async fn main() {
             println!("[bot] Checking domains to renew");
             match bot::get_domains_ready_for_renewal(&conf, &shared_state).await {
                 Ok(domains) => {
-                    println!("[indexer] checking domains to renew today");
-                    if !domains.0.is_empty() && !domains.1.is_empty() {
+                    println!("[bot] checking domains to renew today");
+                    if !domains.0.is_empty() && !domains.1.is_empty() && !domains.2.is_empty() {
                         match renew_domains(&conf, &account, domains.clone()).await {
                             Ok(_) => {
                                 match log_domains_renewed(&conf, domains).await {
