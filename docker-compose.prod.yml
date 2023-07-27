@@ -20,8 +20,8 @@ services:
     restart: always
     links:
       - mongo
-    ports:
-    - 8090:8090
+    expose:
+      - 8090
 
   bot:
     container_name: bot
