@@ -5,6 +5,7 @@ use bigdecimal::num_bigint::{BigInt, ToBigInt};
 use bson::{doc, Bson, DateTime as BsonDateTime};
 use chrono::{Duration, Utc};
 use futures::TryStreamExt;
+use num_integer::Integer;
 use starknet::accounts::Account;
 use starknet::{
     accounts::{Call, SingleOwnerAccount},
@@ -25,6 +26,7 @@ use bigdecimal::{BigDecimal, ToPrimitive};
 
 lazy_static::lazy_static! {
     static ref RENEW_TIME: FieldElement = FieldElement::from_dec_str("365").unwrap();
+    static ref TWO_POW_128: BigInt = BigInt::from(2).pow(128);
 }
 
 pub fn get_provider(config: &Config) -> SequencerGatewayProvider {
@@ -41,14 +43,13 @@ pub fn get_provider(config: &Config) -> SequencerGatewayProvider {
 }
 
 fn to_uint256(n: BigInt) -> (FieldElement, FieldElement) {
-    let two_pow_128 = BigInt::from(2).pow(128);
-
-    let low = (&n % &two_pow_128).to_u128().unwrap().to_string();
-    let high = (n / two_pow_128).to_u128().unwrap().to_string();
+    let (n_high, n_low) = n.div_rem(&TWO_POW_128);
+    let (_, low_bytes) = n_low.to_bytes_be();
+    let (_, high_bytes) = n_high.to_bytes_be();
 
     (
-        FieldElement::from_dec_str(&low).unwrap(),
-        FieldElement::from_dec_str(&high).unwrap(),
+        FieldElement::from_byte_slice_be(&low_bytes).unwrap(),
+        FieldElement::from_byte_slice_be(&high_bytes).unwrap(),
     )
 }
 
@@ -61,7 +62,7 @@ pub async fn get_domains_ready_for_renewal(
 
     // Define aggregate pipeline
     let pipeline = vec![
-        doc! { "$match": { "_chain.valid_to": { "$exists": Bson::Null } } },
+        doc! { "$match": { "_chain.valid_to": Bson::Null } },
         doc! { "$match": { "expiry": { "$lt": BsonDateTime::from_millis(min_expiry_date.timestamp_millis()) } } },
         doc! { "$lookup": {
             "from": "auto_renewals",
