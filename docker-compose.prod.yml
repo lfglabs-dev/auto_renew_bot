@@ -20,8 +20,8 @@ services:
     restart: always
     links:
       - mongo
-    ports:
-    - 8090:8090
+    expose:
+      - 8090
 
   bot:
     container_name: bot
@@ -33,3 +33,18 @@ services:
     links:
       - indexer
       - mongo
+
+  nginx:
+    image: valian/docker-nginx-auto-ssl
+    restart: on-failure
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ssl_data:/etc/resty-auto-ssl
+    environment:
+      ALLOWED_DOMAINS: "indexer.renewal.starknet.id"
+      SITES: "indexer.renewal.starknet.id=indexer:8090"
+
+volumes:
+  ssl_data:
