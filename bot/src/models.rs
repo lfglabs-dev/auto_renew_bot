@@ -29,10 +29,19 @@ pub struct AutoRenewals {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Chain {
+    pub valid_to: Option<u32>,
+    pub valid_from: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DomainAggregateResult {
     pub domain: String,
     pub expiry: Option<DateTime>,
     pub renewer_address: String,
     pub auto_renewal_enabled: bool,
     pub approval_value: String,
+    pub limit_price: String,
+    pub last_renewal: String,
+    pub _chain: Chain,
 }

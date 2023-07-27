@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use bigdecimal::BigDecimal;
 use serde_json::json;
 use serenity::http::Http;
 use serenity::model::channel::Message;
@@ -44,7 +45,7 @@ pub async fn log_msg_and_send_to_discord(config: &Config, log_type: &str, msg_co
 
 pub async fn log_domains_renewed(
     config: &Config,
-    domains: (Vec<FieldElement>, Vec<FieldElement>),
+    domains: (Vec<FieldElement>, Vec<FieldElement>, Vec<BigDecimal>),
 ) -> Result<()> {
     let message = format!(
         "Domains renewed: \n {}",
