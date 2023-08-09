@@ -37,7 +37,7 @@ pub struct Chain {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DomainAggregateResult {
     pub domain: String,
-    pub expiry: Option<DateTime>,
+    pub expiry: Option<i32>,
     pub renewer_address: String,
     pub auto_renewal_enabled: bool,
     pub approval_value: String,

@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::num_bigint::{BigInt, ToBigInt};
-use bson::{doc, Bson, DateTime as BsonDateTime};
+use bson::{doc, Bson};
 use chrono::{Duration, Utc};
 use futures::TryStreamExt;
 use num_integer::Integer;
@@ -22,7 +22,7 @@ use crate::{
     config::Config,
     models::{AppState, Domain},
 };
-use bigdecimal::{BigDecimal, ToPrimitive};
+use bigdecimal::BigDecimal;
 
 lazy_static::lazy_static! {
     static ref RENEW_TIME: FieldElement = FieldElement::from_dec_str("365").unwrap();
@@ -63,7 +63,7 @@ pub async fn get_domains_ready_for_renewal(
     // Define aggregate pipeline
     let pipeline = vec![
         doc! { "$match": { "_chain.valid_to": Bson::Null } },
-        doc! { "$match": { "expiry": { "$lt": BsonDateTime::from_millis(min_expiry_date.timestamp_millis()) } } },
+        doc! { "$match": { "expiry": { "$lt": Bson::Int32((min_expiry_date.timestamp_millis() / 1000).try_into().unwrap()) } } },
         doc! { "$lookup": {
             "from": "auto_renewals",
             "let": { "domain_name": "$domain" },
@@ -202,11 +202,10 @@ async fn process_aggregate_result(
 pub async fn renew_domains(
     config: &Config,
     account: &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>,
-    domains: (Vec<FieldElement>, Vec<FieldElement>, Vec<BigDecimal>),
+    mut domains: (Vec<FieldElement>, Vec<FieldElement>, Vec<BigDecimal>),
 ) -> Result<()> {
     // If we have more than 400 domains to renew we make multiple transactions to avoid hitting the 2M steps limit
     while !domains.0.is_empty() && !domains.1.is_empty() && !domains.2.is_empty() {
-        let mut domains = domains.clone();
         let size = domains.0.len().min(400);
         let domains_to_renew: Vec<FieldElement> = domains.0.drain(0..size).collect();
         let renewers = domains.1.drain(0..size).collect();
