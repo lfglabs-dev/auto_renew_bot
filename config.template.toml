@@ -13,7 +13,7 @@ renewal = "0x113ccc82ed68d56879f6d3ec656aa466fa8bc5081786c7dddaac3754216ab82"
 erc20 = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 
 [database]
-name = "auto_renew_indexer"
+name = "starknetid"
 connection_string = ""
 
 [devnet_provider]
