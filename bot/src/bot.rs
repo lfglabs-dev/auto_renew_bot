@@ -7,6 +7,7 @@ use chrono::{Duration, Utc};
 use futures::TryStreamExt;
 use num_integer::Integer;
 use starknet::accounts::Account;
+use starknet::core::chain_id;
 use starknet::{
     accounts::{Call, SingleOwnerAccount},
     core::types::{BlockId, CallFunction, FieldElement},
@@ -39,6 +40,14 @@ pub fn get_provider(config: &Config) -> SequencerGatewayProvider {
         SequencerGatewayProvider::starknet_alpha_goerli()
     } else {
         SequencerGatewayProvider::starknet_alpha_mainnet()
+    }
+}
+
+pub fn get_chainid(config: &Config) -> FieldElement {
+    if config.devnet_provider.is_devnet || config.devnet_provider.is_testnet {
+        chain_id::TESTNET
+    } else {
+        chain_id::MAINNET
     }
 }
 
