@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use bot::{get_provider, renew_domains};
+use bot::{get_chainid, get_provider, renew_domains};
 use bson::doc;
 use discord::{log_domains_renewed, log_error_and_send_to_discord, log_msg_and_send_to_discord};
 use mongodb::{options::ClientOptions, Client as mongoClient};
 use starknet::{
     accounts::SingleOwnerAccount,
-    core::chain_id,
     signers::{LocalWallet, SigningKey},
 };
 use tokio::time::sleep;
@@ -47,9 +46,9 @@ async fn main() {
     }
 
     let provider = get_provider(&conf);
+    let chainid = get_chainid(&conf);
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(conf.account.private_key));
-    let account =
-        SingleOwnerAccount::new(provider, signer, conf.account.address, chain_id::TESTNET);
+    let account = SingleOwnerAccount::new(provider, signer, conf.account.address, chainid);
     println!("[bot] started");
     let mut need_to_check_status = true;
     loop {
