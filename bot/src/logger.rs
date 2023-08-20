@@ -129,6 +129,7 @@ impl Logger {
         });
     }
 
+    #[allow(dead_code)]
     pub fn local<S>(&self, message: S)
     where
         S: Into<Cow<'static, str>> + std::fmt::Display,
