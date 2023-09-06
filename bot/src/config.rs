@@ -30,6 +30,8 @@ pub_struct!(Clone, Deserialize; Contract {
 pub_struct!(Clone, Deserialize; Database {
     name: String,
     connection_string: String,
+    metadata_name : String,
+    connection_string_metadata: String,
 });
 
 pub_struct!(Clone, Deserialize; DevnetProvider {

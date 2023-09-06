@@ -15,18 +15,31 @@ mod config;
 mod discord;
 mod indexer_status;
 mod models;
+mod sales_tax;
 
 #[tokio::main]
 async fn main() {
     let conf = config::load();
 
+    let states = sales_tax::load_sales_tax(&conf).await;
+    if states.states.is_empty() {
+        return;
+    }
+
     let client_options = ClientOptions::parse(&conf.database.connection_string)
+        .await
+        .unwrap();
+    let client_options_metadata = ClientOptions::parse(&conf.database.connection_string_metadata)
         .await
         .unwrap();
     let shared_state = Arc::new(models::AppState {
         db: mongoClient::with_options(client_options)
             .unwrap()
             .database(&conf.database.name),
+        db_metadata: mongoClient::with_options(client_options_metadata)
+            .unwrap()
+            .database(&conf.database.metadata_name),
+        states,
     });
     if shared_state
         .db
@@ -45,12 +58,31 @@ async fn main() {
         log_msg_and_send_to_discord(&conf, "[bot]", "connected to database").await;
     }
 
+    if shared_state
+        .db_metadata
+        .run_command(doc! {"ping": 1}, None)
+        .await
+        .is_err()
+    {
+        log_error_and_send_to_discord(
+            &conf,
+            "[bot][error]",
+            &anyhow::anyhow!("Unable to connect to metadata database"),
+        )
+        .await;
+        return;
+    } else {
+        log_msg_and_send_to_discord(&conf, "[bot]", "connected to metadata database").await;
+    }
+
     let provider = get_provider(&conf);
     let chainid = get_chainid(&conf);
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(conf.account.private_key));
     let account = SingleOwnerAccount::new(provider, signer, conf.account.address, chainid);
+
     println!("[bot] started");
-    let mut need_to_check_status = true;
+    //todo rechange this
+    let mut need_to_check_status = false;
     loop {
         if need_to_check_status {
             println!("[bot] Checking indexer status");
@@ -92,12 +124,12 @@ async fn main() {
         } else {
             println!("[bot] Checking domains to renew");
             match bot::get_domains_ready_for_renewal(&conf, &shared_state).await {
-                Ok(domains) => {
+                Ok(aggregate_results) => {
                     println!("[bot] checking domains to renew today");
-                    if !domains.0.is_empty() && !domains.1.is_empty() && !domains.2.is_empty() {
-                        match renew_domains(&conf, &account, domains.clone()).await {
+                    if !aggregate_results.domains.is_empty() {
+                        match renew_domains(&conf, &account, aggregate_results.clone()).await {
                             Ok(_) => {
-                                match log_domains_renewed(&conf, domains).await {
+                                match log_domains_renewed(&conf, aggregate_results).await {
                                     Ok(_) => {log_msg_and_send_to_discord(
                                         &conf,
                                         "[bot][renewals]",
