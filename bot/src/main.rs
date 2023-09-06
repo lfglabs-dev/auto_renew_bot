@@ -81,8 +81,7 @@ async fn main() {
     let account = SingleOwnerAccount::new(provider, signer, conf.account.address, chainid);
 
     println!("[bot] started");
-    //todo rechange this
-    let mut need_to_check_status = false;
+    let mut need_to_check_status = true;
     loop {
         if need_to_check_status {
             println!("[bot] Checking indexer status");
