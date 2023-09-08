@@ -1,11 +1,10 @@
 use anyhow::{Context, Result};
-use bigdecimal::BigDecimal;
 use serde_json::json;
 use serenity::http::Http;
 use serenity::model::channel::Message;
-use starknet::core::types::FieldElement;
 
 use crate::config::Config;
+use crate::models::AggregateResults;
 
 pub async fn send_message_to_discord(config: &Config, message: &str) -> Result<Message> {
     let http = Http::new(&config.discord.token);
@@ -45,14 +44,14 @@ pub async fn log_msg_and_send_to_discord(config: &Config, log_type: &str, msg_co
 
 pub async fn log_domains_renewed(
     config: &Config,
-    domains: (Vec<FieldElement>, Vec<FieldElement>, Vec<BigDecimal>),
+    aggregate_results: AggregateResults,
 ) -> Result<()> {
     let message = format!(
         "Domains renewed: \n {}",
-        domains
-            .0
+        aggregate_results
+            .domains
             .iter()
-            .zip(domains.1.iter())
+            .zip(aggregate_results.domains.iter())
             .map(|(d, r)| format!("- `{}` by `{}`", &starknet::id::decode(*d), r))
             .collect::<Vec<String>>()
             .join(" \n")
