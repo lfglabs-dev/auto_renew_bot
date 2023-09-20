@@ -1,5 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
+use self::status::status_client::StatusClient;
+use self::status::GetStatusRequest;
 use bot::renew_domains;
 use bson::doc;
 use mongodb::{options::ClientOptions, Client as mongoClient};
@@ -9,8 +11,13 @@ use starknet::{
     providers::Provider,
     signers::{LocalWallet, SigningKey},
 };
+use starknet_id::decode;
 use starknet_utils::create_jsonrpc_client;
 use tokio::time::sleep;
+
+pub mod status {
+    tonic::include_proto!("apibara.sink.v1");
+}
 
 mod bot;
 mod config;
@@ -97,42 +104,40 @@ async fn main() {
         starknet::accounts::ExecutionEncoding::Legacy,
     );
 
+    let mut indexer_client = StatusClient::connect("http://localhost:8118")
+        .await
+        .unwrap();
+
     logger.info("Started");
-    // todo: passed to false to now, until we have a way to check if the indexer is up to date    
     let mut need_to_check_status = true;
+
     loop {
         if need_to_check_status {
             logger.info("Checking indexer status");
-            match indexer_status::get_status_from_endpoint(&conf).await {
-                Ok(block) => {
-                    println!("Block: {}", block);
-                    match indexer_status::check_block_status(&conf, block).await {
-                        Ok(status) => {
-                            if status {
-                                need_to_check_status = false;
-                                logger.info("Indexer is up to date, starting renewals")
-                            } else {
-                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                                continue;
-                            }
-                        }
-                        Err(error) => {
-                            logger.severe(format!(
-                                "Error while checking block status: {}, retrying in 5 seconds",
-                                error
-                            ));
-                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                        }
-                    }
+            let request = tonic::Request::new(GetStatusRequest {});
+            match indexer_client.get_status(request).await {
+                Ok(response) => {
+                    println!("RESPONSE={:?}", response.into_inner());
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    // if status {
+                    //     need_to_check_status = false;
+                    //     logger.info("Indexer is up to date, starting renewals")
+                    // } else {
+                    //     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    //     continue;
+                    // }
                 }
                 Err(error) => {
-                    println!(
-                        "Error getting indexer status, retrying in 5 seconds: {}",
+                    println!("ERROR={:?}", error);
+                    logger.severe(format!(
+                        "Error while checking block status: {}, retrying in 5 seconds",
                         error
-                    );
+                    ));
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 }
             }
+
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         } else {
             println!("[bot] Checking domains to renew");
             match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
@@ -150,7 +155,7 @@ async fn main() {
                                     .for_each(|(d, r)| {
                                         logger.info(format!(
                                             "- `Renewal: {}` by `{:#x}`",
-                                            &starknet::id::decode(*d),
+                                            &decode(*d),
                                             r
                                         ))
                                     });

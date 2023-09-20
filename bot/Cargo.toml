@@ -25,4 +25,8 @@ starknet = "0.6.0"
 starknet-id = { git = "https://github.com/starknet-id/starknet-id.rs.git", branch = "master" }
 serde_derive = "1.0.183"
 env_logger = "0.10.0"
+tonic = "0.10.0"
+prost = "0.12.1"
 
+[build-dependencies]
+tonic-build = "0.10.0"
