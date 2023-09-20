@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use bot::renew_domains;
 use bson::doc;
-use discord::{log_domains_renewed, log_error_and_send_to_discord, log_msg_and_send_to_discord};
 use mongodb::{options::ClientOptions, Client as mongoClient};
+use serde_derive::Serialize;
 use starknet::{
     accounts::SingleOwnerAccount,
     providers::Provider,
@@ -14,18 +14,33 @@ use tokio::time::sleep;
 
 mod bot;
 mod config;
-mod discord;
 mod indexer_status;
+mod logger;
 mod models;
 mod sales_tax;
 mod starknet_utils;
 mod utils;
 
+#[derive(Serialize)]
+struct LogData<'a> {
+    token: &'a str,
+    log: LogPayload<'a>,
+}
+
+#[derive(Serialize)]
+struct LogPayload<'a> {
+    app_id: &'a str,
+    r#type: &'a str,
+    message: Cow<'a, str>,
+    timestamp: i64,
+}
+
 #[tokio::main]
 async fn main() {
     let conf = config::load();
+    let logger = logger::Logger::new(&conf.watchtower);
 
-    let states = sales_tax::load_sales_tax(&conf).await;
+    let states = sales_tax::load_sales_tax(&logger).await;
     if states.states.is_empty() {
         return;
     }
@@ -51,15 +66,10 @@ async fn main() {
         .await
         .is_err()
     {
-        log_error_and_send_to_discord(
-            &conf,
-            "[bot][error]",
-            &anyhow::anyhow!("Unable to connect to database"),
-        )
-        .await;
+        logger.async_severe("Unable to connect to database").await;
         return;
     } else {
-        log_msg_and_send_to_discord(&conf, "[bot]", "connected to database").await;
+        logger.info("Connected to database");
     }
 
     if shared_state
@@ -68,15 +78,12 @@ async fn main() {
         .await
         .is_err()
     {
-        log_error_and_send_to_discord(
-            &conf,
-            "[bot][error]",
-            &anyhow::anyhow!("Unable to connect to metadata database"),
-        )
-        .await;
+        logger
+            .async_severe("Unable to connect to metadata database")
+            .await;
         return;
     } else {
-        log_msg_and_send_to_discord(&conf, "[bot]", "connected to metadata database").await;
+        logger.info("Connected to metadata database");
     }
 
     let provider = create_jsonrpc_client(&conf);
@@ -90,12 +97,12 @@ async fn main() {
         starknet::accounts::ExecutionEncoding::Legacy,
     );
 
-    println!("[bot] started");
-    // todo: passed to false to now, until we have a way to check if the indexer is up to date
-    let mut need_to_check_status = false;
+    logger.info("Started");
+    // todo: passed to false to now, until we have a way to check if the indexer is up to date    
+    let mut need_to_check_status = true;
     loop {
         if need_to_check_status {
-            println!("[bot] Checking indexer status");
+            logger.info("Checking indexer status");
             match indexer_status::get_status_from_endpoint(&conf).await {
                 Ok(block) => {
                     println!("Block: {}", block);
@@ -103,22 +110,17 @@ async fn main() {
                         Ok(status) => {
                             if status {
                                 need_to_check_status = false;
-                                log_msg_and_send_to_discord(
-                                    &conf,
-                                    "[bot][renewals]",
-                                    "Indexer is up to date, starting renewals",
-                                )
-                                .await
+                                logger.info("Indexer is up to date, starting renewals")
                             } else {
                                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                                 continue;
                             }
                         }
                         Err(error) => {
-                            println!(
+                            logger.severe(format!(
                                 "Error while checking block status: {}, retrying in 5 seconds",
                                 error
-                            );
+                            ));
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                         }
                     }
@@ -133,29 +135,28 @@ async fn main() {
             }
         } else {
             println!("[bot] Checking domains to renew");
-            match bot::get_domains_ready_for_renewal(&conf, &shared_state).await {
+            match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
                 Ok(aggregate_results) => {
                     println!("[bot] checking domains to renew today");
                     if !aggregate_results.domains.is_empty() {
-                        match renew_domains(&conf, &account, aggregate_results.clone()).await {
+                        match renew_domains(&conf, &account, aggregate_results.clone(), &logger)
+                            .await
+                        {
                             Ok(_) => {
-                                match log_domains_renewed(&conf, aggregate_results).await {
-                                    Ok(_) => {log_msg_and_send_to_discord(
-                                        &conf,
-                                        "[bot][renewals]",
-                                        "All domains renewed successfully",
-                                    )
-                                    .await}
-                                    Err(error) => log_error_and_send_to_discord(&conf,"[bot][error] An error occurred while logging domains renewed into Discord",  &error).await
-                                };
+                                aggregate_results
+                                    .domains
+                                    .iter()
+                                    .zip(aggregate_results.renewers.iter())
+                                    .for_each(|(d, r)| {
+                                        logger.info(format!(
+                                            "- `Renewal: {}` by `{:#x}`",
+                                            &starknet::id::decode(*d),
+                                            r
+                                        ))
+                                    });
                             }
                             Err(e) => {
-                                log_error_and_send_to_discord(
-                                    &conf,
-                                    "[bot][error] An error occurred while renewing domains",
-                                    &e,
-                                )
-                                .await;
+                                logger.severe(format!("Unable to renew domains: {}", e));
                                 if e.to_string().contains("request rate limited") {
                                     continue;
                                 } else {
@@ -164,21 +165,14 @@ async fn main() {
                             }
                         }
                     } else {
-                        log_msg_and_send_to_discord(
-                            &conf,
-                            "[bot][renewals]",
-                            "No domains to renew today",
-                        )
-                        .await;
+                        logger.info("No domains to renew today");
                     }
                 }
                 Err(e) => {
-                    log_error_and_send_to_discord(
-                        &conf,
-                        "[bot][error] An error occurred while getting domains ready for renewal",
-                        &e,
-                    )
-                    .await;
+                    logger.severe(format!(
+                        "Unable to retrieve domains ready for renewal: {}",
+                        e
+                    ));
                 }
             }
             // Sleep for 24 hours

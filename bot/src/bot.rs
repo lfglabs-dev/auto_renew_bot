@@ -16,7 +16,7 @@ use starknet::{
 };
 use starknet_id::encode;
 
-use crate::discord::log_msg_and_send_to_discord;
+use crate::logger::Logger;
 use crate::models::{
     AggregateResult, AggregateResults, DomainAggregateResult, MetadataDoc, Unzip5,
 };
@@ -35,6 +35,7 @@ lazy_static::lazy_static! {
 pub async fn get_domains_ready_for_renewal(
     config: &Config,
     state: &Arc<AppState>,
+    logger: &Logger,
 ) -> Result<AggregateResults> {
     let domains = state.db.collection::<Domain>("domains");
     let min_expiry_date = Utc::now() + Duration::days(30);
@@ -103,7 +104,7 @@ pub async fn get_domains_ready_for_renewal(
     // Then process the results
     let futures: Vec<_> = results
         .into_iter()
-        .map(|result| process_aggregate_result(state, result, config))
+        .map(|result| process_aggregate_result(state, result, config, logger))
         .collect();
 
     let processed_results: Vec<_> = futures::future::try_join_all(futures)
@@ -174,6 +175,7 @@ async fn process_aggregate_result(
     state: &Arc<AppState>,
     result: DomainAggregateResult,
     config: &Config,
+    logger: &Logger,
 ) -> Result<Option<AggregateResult>> {
     // Skip the rest if auto-renewal is not enabled
     if !result.auto_renewal_enabled {
@@ -220,15 +222,10 @@ async fn process_aggregate_result(
                         check_user_balance(config, provider, renewer_addr, limit_price.clone())
                             .await?;
                     if let Some(false) = has_funds {
-                        log_msg_and_send_to_discord(
-                            &config,
-                            "[Renewal]",
-                            &format!(
-                                "Domain {} cannot be renewed because {} has not enough balance",
-                                result.domain, result.renewer_address
-                            ),
-                        )
-                        .await;
+                    logger.warning(format!(
+                        "Domain {} cannot be renewed because {} has not enough balance",
+                        result.domain, result.renewer_address
+                    ));
                         return Ok(None);
                     }
 
@@ -279,27 +276,17 @@ async fn process_aggregate_result(
                         meta_hash: FieldElement::from_str("0")?,
                     }))
                 } else {
-                    log_msg_and_send_to_discord(
-                    &config,
-                    "[Renewal]",
-                    &format!(
+                    logger.warning(format!(
                         "Domain {} cannot be renewed because {} has set a limit_price({}) lower than domain price({})",
                         result.domain, result.renewer_address, limit_price, renew_price
-                    ),
-                )
-                .await;
+                    ));
                     Ok(None)
                 }
             } else {
-                log_msg_and_send_to_discord(
-                    &config,
-                    "[Renewal]",
-                    &format!(
-                        "Domain {} cannot be renewed because {} has not enough allowance ({})",
-                        result.domain, result.renewer_address, allowance
-                    ),
-                )
-                .await;
+                logger.warning(format!(
+                    "Domain {} cannot be renewed because {} has not enough allowance ({})",
+                    result.domain, result.renewer_address, allowance
+                ));
                 Ok(None)
             }
         }
@@ -315,6 +302,7 @@ pub async fn renew_domains(
     config: &Config,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     mut aggregate_results: AggregateResults,
+    logger: &Logger,
 ) -> Result<()> {
     // If we have more than 400 domains to renew we make multiple transactions to avoid hitting the 2M steps limit
     while !aggregate_results.domains.is_empty()
@@ -345,23 +333,16 @@ pub async fn renew_domains(
         .await
         {
             Ok(_) => {
-                log_msg_and_send_to_discord(
-                    &config,
-                    "[bot][renew_domains]",
-                    &format!("Successfully renewed domains: {:?}", domains_to_renew),
-                )
-                .await
+                logger.info(format!(
+                    "Sent a tx to renew {} domains",
+                    domains_to_renew.len()
+                ));
             }
             Err(e) => {
-                log_msg_and_send_to_discord(
-                    &config,
-                    "[bot][renew_domains]",
-                    &format!(
-                        "Error while renewing domains: {:?} for domains: {:?}",
-                        e, domains_to_renew
-                    ),
-                )
-                .await;
+                logger.severe(format!(
+                    "Error while renewing domains: {:?} for domains: {:?}",
+                    e, domains_to_renew
+                ));
                 return Err(e);
             }
         }

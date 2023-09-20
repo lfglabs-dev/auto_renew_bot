@@ -23,4 +23,6 @@ reqwest = "0.11.18"
 num-integer = "0.1.45"
 starknet = "0.6.0"
 starknet-id = { git = "https://github.com/starknet-id/starknet-id.rs.git", branch = "master" }
+serde_derive = "1.0.183"
+env_logger = "0.10.0"
 
