@@ -140,6 +140,36 @@ pub async fn get_domains_ready_for_renewal(
     })
 }
 
+async fn check_user_balance(
+    config: &Config,
+    provider: JsonRpcClient<HttpTransport>,
+    addr: FieldElement,
+    limit_price: BigDecimal,
+) -> Result<Option<bool>> {
+    let call_balance = provider
+        .call(
+            FunctionCall {
+                contract_address: config.contract.erc20,
+                entry_point_selector: selector!("balanceOf"),
+                calldata: vec![addr],
+            },
+            BlockId::Tag(BlockTag::Latest),
+        )
+        .await;
+
+    match call_balance {
+        Ok(balance) => {
+            let balance = FieldElement::to_big_decimal(&balance[0], 18);
+            Ok(Some(balance >= limit_price))
+        }
+        Err(e) => Err(anyhow::anyhow!(
+            "Error while fetching balance of user {:?} : {:?}",
+            &addr,
+            e
+        )),
+    }
+}
+
 async fn process_aggregate_result(
     state: &Arc<AppState>,
     result: DomainAggregateResult,
@@ -181,55 +211,92 @@ async fn process_aggregate_result(
     match call_result {
         Ok(price) => {
             let renew_price = FieldElement::to_big_decimal(&price[1], 18);
-            // Check user has enough allowance & limit_price is not lower than renew_price
-            if renew_price <= allowance && renew_price <= limit_price {
-                // encode domain name
-                let domain_encoded = encode(domain_name)
-                    .map_err(|_| anyhow!("Failed to encode domain name"))
-                    .context("Error occurred while encoding domain name")?;
-                if let Some(meta_hash) = result.meta_hash {
-                    if meta_hash != "0" {
-                        let decimal_meta_hash =
-                            BigInt::parse_bytes(meta_hash.trim_start_matches("0x").as_bytes(), 16)
-                                .unwrap();
-                        let hex_meta_hash = decimal_meta_hash.to_str_radix(16);
-                        let metadata_collection =
-                            state.db_metadata.collection::<MetadataDoc>("metadata");
-                        if let Some(document) = metadata_collection
-                            .find_one(doc! {"meta_hash": hex_meta_hash}, FindOneOptions::default())
-                            .await?
-                        {
-                            let tax_state = document.tax_state;
-                            if let Some(state_info) = state.states.states.get(&tax_state) {
-                                let tax_rate = (state_info.rate * 100.0).round() as i32;
-                                let tax_price = (renew_price * BigDecimal::from(tax_rate))
-                                    / BigDecimal::from(100);
-                                return Ok(Some(AggregateResult {
-                                    domain: domain_encoded,
-                                    renewer_addr,
-                                    limit_price,
-                                    tax_price,
-                                    meta_hash: FieldElement::from_hex_be(&meta_hash)?,
-                                }));
+            // Check user has enough allowance
+            if renew_price <= allowance {
+                // Check limit_price is not lower than renew_price
+                if renew_price <= limit_price {
+                    // check user balance is greater or equal than limit_price
+                    let has_funds =
+                        check_user_balance(config, provider, renewer_addr, limit_price.clone())
+                            .await?;
+                    if let Some(false) = has_funds {
+                        log_msg_and_send_to_discord(
+                            &config,
+                            "[Renewal]",
+                            &format!(
+                                "Domain {} cannot be renewed because {} has not enough balance",
+                                result.domain, result.renewer_address
+                            ),
+                        )
+                        .await;
+                        return Ok(None);
+                    }
+
+                    // encode domain name
+                    let domain_encoded = encode(domain_name)
+                        .map_err(|_| anyhow!("Failed to encode domain name"))
+                        .context("Error occurred while encoding domain name")?;
+                    // Check user meta_hash
+                    if let Some(meta_hash) = result.meta_hash {
+                        if meta_hash != "0" {
+                            let decimal_meta_hash = BigInt::parse_bytes(
+                                meta_hash.trim_start_matches("0x").as_bytes(),
+                                16,
+                            )
+                            .unwrap();
+                            let hex_meta_hash = decimal_meta_hash.to_str_radix(16);
+                            let metadata_collection =
+                                state.db_metadata.collection::<MetadataDoc>("metadata");
+                            if let Some(document) = metadata_collection
+                                .find_one(
+                                    doc! {"meta_hash": hex_meta_hash},
+                                    FindOneOptions::default(),
+                                )
+                                .await?
+                            {
+                                let tax_state = document.tax_state;
+                                if let Some(state_info) = state.states.states.get(&tax_state) {
+                                    let tax_rate = (state_info.rate * 100.0).round() as i32;
+                                    let tax_price = (renew_price * BigDecimal::from(tax_rate))
+                                        / BigDecimal::from(100);
+                                    return Ok(Some(AggregateResult {
+                                        domain: domain_encoded,
+                                        renewer_addr,
+                                        limit_price,
+                                        tax_price,
+                                        meta_hash: FieldElement::from_hex_be(&meta_hash)?,
+                                    }));
+                                }
                             }
                         }
                     }
-                }
 
-                Ok(Some(AggregateResult {
-                    domain: domain_encoded,
-                    renewer_addr,
-                    limit_price,
-                    tax_price: BigDecimal::from(0),
-                    meta_hash: FieldElement::from_str("0")?,
-                }))
+                    Ok(Some(AggregateResult {
+                        domain: domain_encoded,
+                        renewer_addr,
+                        limit_price,
+                        tax_price: BigDecimal::from(0),
+                        meta_hash: FieldElement::from_str("0")?,
+                    }))
+                } else {
+                    log_msg_and_send_to_discord(
+                    &config,
+                    "[Renewal]",
+                    &format!(
+                        "Domain {} cannot be renewed because {} has set a limit_price({}) lower than domain price({})",
+                        result.domain, result.renewer_address, limit_price, renew_price
+                    ),
+                )
+                .await;
+                    Ok(None)
+                }
             } else {
                 log_msg_and_send_to_discord(
                     &config,
                     "[Renewal]",
                     &format!(
-                        "Domain {} cannot be renewed because {} has not enough allowance",
-                        result.domain, result.renewer_address
+                        "Domain {} cannot be renewed because {} has not enough allowance ({})",
+                        result.domain, result.renewer_address, allowance
                     ),
                 )
                 .await;
