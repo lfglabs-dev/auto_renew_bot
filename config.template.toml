@@ -28,13 +28,18 @@ feeder_gateway = "http://localhost:5050/feeder_gateway"
 private_key = "0x123"
 address = "0x123"
 
-[discord]
-token = "xxxxxx"
-channel_id = 123456789
-
 [renewals]
 delay = 86400 # 24 hours
 
 [indexer_server]
 port = 8090
 server_url = "http://0.0.0.0"
+
+[watchtower]
+endpoint = "https://api.watchtower.starknet.id/service/add_message"
+app_id = "XXXXXXXXXXXXXXXXX"
+token = "XXXXXXXXXXXXXXXXX"
+[watchtower.types]
+info = "goerli/info"
+warning = "goerli/warning"
+severe = "goerli/severe"

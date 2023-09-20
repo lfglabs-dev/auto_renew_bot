@@ -46,11 +46,6 @@ pub_struct!(Clone, Deserialize; MyAccount {
     address: FieldElement,
 });
 
-pub_struct!(Clone, Deserialize; Discord {
-    token: String,
-    channel_id: u64,
-});
-
 pub_struct!(Clone, Deserialize; Renewals {
     delay: u64,
 });
@@ -60,15 +55,28 @@ pub_struct!(Clone, Deserialize; IndexerServer {
     server_url: String,
 });
 
+pub_struct!(Clone, Deserialize; Watchtower {
+    endpoint: String,
+    app_id: String,
+    token: String,
+    types: WatchtowerTypes,
+});
+
+pub_struct!(Clone, Deserialize; WatchtowerTypes {
+    info: String,
+    warning: String,
+    severe: String,
+});
+
 pub_struct!(Clone, Deserialize; Config {
     apibara: Apibara,
     contract: Contract,
     database: Database,
     devnet_provider: DevnetProvider,
     account: MyAccount,
-    discord: Discord,
     renewals : Renewals,
     indexer_server: IndexerServer,
+    watchtower: Watchtower,
 });
 
 pub fn load() -> Config {
