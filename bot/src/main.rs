@@ -123,20 +123,6 @@ async fn main() {
             }
         } else {
             println!("[bot] Checking domains to renew");
-            // match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
-            //     Ok(domains) => {
-            //         println!("[bot] checking domains to renew today");
-            //         if !domains.0.is_empty() && !domains.1.is_empty() && !domains.2.is_empty() {
-            //             match renew_domains(&conf, &account, &logger, domains.clone()).await {
-            //                 Ok(_) => {
-            //                     domains.0.iter().zip(domains.1.iter()).for_each(|(d, r)| {
-            //                         logger.info(format!(
-            //                             "- `Renewal: {}` by `{:#x}`",
-            //                             &starknet::id::decode(*d),
-            //                             r
-            //                         ))
-            //                     });
-
             match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
                 Ok(aggregate_results) => {
                     println!("[bot] checking domains to renew today");
@@ -145,15 +131,6 @@ async fn main() {
                             .await
                         {
                             Ok(_) => {
-                                // match log_domains_renewed(&conf, aggregate_results).await {
-                                //     Ok(_) => {log_msg_and_send_to_discord(
-                                //         &conf,
-                                //         "[bot][renewals]",
-                                //         "All domains renewed successfully",
-                                //     )
-                                //     .await}
-                                //     Err(error) => log_error_and_send_to_discord(&conf,"[bot][error] An error occurred while logging domains renewed into Discord",  &error).await
-                                // };
                                 aggregate_results
                                     .domains
                                     .iter()
