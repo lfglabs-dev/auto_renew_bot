@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde_json::json;
 use serenity::http::Http;
 use serenity::model::channel::Message;
+use starknet_id::decode;
 
 use crate::config::Config;
 use crate::models::AggregateResults;
@@ -52,7 +53,7 @@ pub async fn log_domains_renewed(
             .domains
             .iter()
             .zip(aggregate_results.domains.iter())
-            .map(|(d, r)| format!("- `{}` by `{}`", &starknet::id::decode(*d), r))
+            .map(|(d, r)| format!("- `{}` by `{}`", &decode(*d), r))
             .collect::<Vec<String>>()
             .join(" \n")
     );
