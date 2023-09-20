@@ -15,6 +15,7 @@ mod config;
 mod indexer_status;
 mod logger;
 mod models;
+mod sales_tax;
 
 #[derive(Serialize)]
 struct LogData<'a> {
@@ -33,16 +34,27 @@ struct LogPayload<'a> {
 #[tokio::main]
 async fn main() {
     let conf = config::load();
-
     let logger = logger::Logger::new(&conf.watchtower);
 
+    let states = sales_tax::load_sales_tax(&logger).await;
+    if states.states.is_empty() {
+        return;
+    }
+
     let client_options = ClientOptions::parse(&conf.database.connection_string)
+        .await
+        .unwrap();
+    let client_options_metadata = ClientOptions::parse(&conf.database.connection_string_metadata)
         .await
         .unwrap();
     let shared_state = Arc::new(models::AppState {
         db: mongoClient::with_options(client_options)
             .unwrap()
             .database(&conf.database.name),
+        db_metadata: mongoClient::with_options(client_options_metadata)
+            .unwrap()
+            .database(&conf.database.metadata_name),
+        states,
     });
     if shared_state
         .db
@@ -54,6 +66,20 @@ async fn main() {
         return;
     } else {
         logger.info("Connected to database");
+    }
+
+    if shared_state
+        .db_metadata
+        .run_command(doc! {"ping": 1}, None)
+        .await
+        .is_err()
+    {
+        logger
+            .async_severe("Unable to connect to metadata database")
+            .await;
+        return;
+    } else {
+        logger.info("Connected to metadata database");
     }
 
     let provider = get_provider(&conf);
@@ -97,19 +123,48 @@ async fn main() {
             }
         } else {
             println!("[bot] Checking domains to renew");
+            // match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
+            //     Ok(domains) => {
+            //         println!("[bot] checking domains to renew today");
+            //         if !domains.0.is_empty() && !domains.1.is_empty() && !domains.2.is_empty() {
+            //             match renew_domains(&conf, &account, &logger, domains.clone()).await {
+            //                 Ok(_) => {
+            //                     domains.0.iter().zip(domains.1.iter()).for_each(|(d, r)| {
+            //                         logger.info(format!(
+            //                             "- `Renewal: {}` by `{:#x}`",
+            //                             &starknet::id::decode(*d),
+            //                             r
+            //                         ))
+            //                     });
+
             match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
-                Ok(domains) => {
+                Ok(aggregate_results) => {
                     println!("[bot] checking domains to renew today");
-                    if !domains.0.is_empty() && !domains.1.is_empty() && !domains.2.is_empty() {
-                        match renew_domains(&conf, &account, &logger, domains.clone()).await {
+                    if !aggregate_results.domains.is_empty() {
+                        match renew_domains(&conf, &account, aggregate_results.clone(), &logger)
+                            .await
+                        {
                             Ok(_) => {
-                                domains.0.iter().zip(domains.1.iter()).for_each(|(d, r)| {
-                                    logger.info(format!(
-                                        "- `Renewal: {}` by `{:#x}`",
-                                        &starknet::id::decode(*d),
-                                        r
-                                    ))
-                                });
+                                // match log_domains_renewed(&conf, aggregate_results).await {
+                                //     Ok(_) => {log_msg_and_send_to_discord(
+                                //         &conf,
+                                //         "[bot][renewals]",
+                                //         "All domains renewed successfully",
+                                //     )
+                                //     .await}
+                                //     Err(error) => log_error_and_send_to_discord(&conf,"[bot][error] An error occurred while logging domains renewed into Discord",  &error).await
+                                // };
+                                aggregate_results
+                                    .domains
+                                    .iter()
+                                    .zip(aggregate_results.renewers.iter())
+                                    .for_each(|(d, r)| {
+                                        logger.info(format!(
+                                            "- `Renewal: {}` by `{:#x}`",
+                                            &starknet::id::decode(*d),
+                                            r
+                                        ))
+                                    });
                             }
                             Err(e) => {
                                 logger.severe(format!("Unable to renew domains: {}", e));

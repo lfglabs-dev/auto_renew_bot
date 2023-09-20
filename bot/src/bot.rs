@@ -5,6 +5,7 @@ use bigdecimal::num_bigint::{BigInt, ToBigInt};
 use bson::{doc, Bson};
 use chrono::{Duration, Utc};
 use futures::TryStreamExt;
+use mongodb::options::FindOneOptions;
 use num_integer::Integer;
 use starknet::accounts::Account;
 use starknet::core::chain_id;
@@ -18,12 +19,14 @@ use starknet::{
 use url::Url;
 
 use crate::logger::Logger;
-use crate::models::DomainAggregateResult;
+use crate::models::{
+    AggregateResult, AggregateResults, DomainAggregateResult, MetadataDoc, Unzip5,
+};
 use crate::{
     config::Config,
     models::{AppState, Domain},
 };
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, FromPrimitive};
 
 lazy_static::lazy_static! {
     static ref RENEW_TIME: FieldElement = FieldElement::from_dec_str("365").unwrap();
@@ -66,7 +69,7 @@ pub async fn get_domains_ready_for_renewal(
     config: &Config,
     state: &Arc<AppState>,
     logger: &Logger,
-) -> Result<(Vec<FieldElement>, Vec<FieldElement>, Vec<BigDecimal>)> {
+) -> Result<AggregateResults> {
     let domains = state.db.collection::<Domain>("domains");
     let min_expiry_date = Utc::now() + Duration::days(30);
 
@@ -114,6 +117,7 @@ pub async fn get_domains_ready_for_renewal(
             "approval_value": { "$ifNull": [ "$approval_info.value", "0" ] },
             "limit_price": "$renewal_info.limit_price",
             "last_renewal": "$renewal_info.last_renewal",
+            "meta_hash": "$renewal_info.meta_hash",
             "_chain": "$renewal_info._chain",
         }},
     ];
@@ -133,27 +137,48 @@ pub async fn get_domains_ready_for_renewal(
     // Then process the results
     let futures: Vec<_> = results
         .into_iter()
-        .map(|result| process_aggregate_result(result, config, logger))
+        .map(|result| process_aggregate_result(state, result, config, logger))
         .collect();
+
     let processed_results: Vec<_> = futures::future::try_join_all(futures)
         .await?
         .into_iter()
         .flatten()
         .collect();
-    let (domains_ready, renewer_limit_tuples): (
+
+    let (domains, renewers, limit_prices, tax_prices, meta_hashes): (
         Vec<FieldElement>,
-        Vec<(FieldElement, BigDecimal)>,
-    ) = processed_results.into_iter().unzip();
-    let (renewer_ready, limit_price_ready): (Vec<FieldElement>, Vec<BigDecimal>) =
-        renewer_limit_tuples.into_iter().unzip();
-    Ok((domains_ready, renewer_ready, limit_price_ready))
+        Vec<FieldElement>,
+        Vec<BigDecimal>,
+        Vec<BigDecimal>,
+        Vec<FieldElement>,
+    ) = processed_results
+        .into_iter()
+        .map(|res| {
+            (
+                res.domain,
+                res.renewer_addr,
+                res.limit_price,
+                res.tax_price,
+                res.meta_hash,
+            )
+        })
+        .unzip5();
+    Ok(AggregateResults {
+        domains,
+        renewers,
+        limit_prices,
+        tax_prices,
+        meta_hashes,
+    })
 }
 
 async fn process_aggregate_result(
+    state: &Arc<AppState>,
     result: DomainAggregateResult,
     config: &Config,
     logger: &Logger,
-) -> Result<Option<(FieldElement, (FieldElement, BigDecimal))>> {
+) -> Result<Option<AggregateResult>> {
     // Skip the rest if auto-renewal is not enabled
     if !result.auto_renewal_enabled {
         return Ok(None);
@@ -188,7 +213,38 @@ async fn process_aggregate_result(
         Ok(res) => {
             let renew_price = FieldElement::to_big_decimal(&res.result[1], 18);
             if renew_price <= allowance && renew_price <= limit_price {
-                Ok(Some((domain_encoded, (renewer_addr, limit_price))))
+                if result.meta_hash != "0" {
+                    let decimal_val =
+                        BigInt::parse_bytes(result.meta_hash.as_str().as_bytes(), 10).unwrap();
+                    let hex_meta_hash = decimal_val.to_str_radix(16);
+                    let metadata_collection =
+                        state.db_metadata.collection::<MetadataDoc>("metadata");
+                    if let Some(document) = metadata_collection
+                        .find_one(doc! {"meta_hash": hex_meta_hash}, FindOneOptions::default())
+                        .await?
+                    {
+                        let tax_state = document.tax_state;
+                        if let Some(state_info) = state.states.states.get(&tax_state) {
+                            let tax_rate = (state_info.rate * 100.0).round() as i32;
+                            let tax_price =
+                                (renew_price * BigDecimal::from(tax_rate)) / BigDecimal::from(100);
+                            return Ok(Some(AggregateResult {
+                                domain: domain_encoded,
+                                renewer_addr,
+                                limit_price,
+                                tax_price,
+                                meta_hash: FieldElement::from_dec_str(&result.meta_hash)?,
+                            }));
+                        }
+                    }
+                }
+                Ok(Some(AggregateResult {
+                    domain: domain_encoded,
+                    renewer_addr,
+                    limit_price,
+                    tax_price: BigDecimal::from(0),
+                    meta_hash: FieldElement::from_str("0")?,
+                }))
             } else {
                 logger.warning(format!(
                     "Domain {} cannot be renewed because {} has not enough allowance",
@@ -198,7 +254,7 @@ async fn process_aggregate_result(
             }
         }
         Err(e) => Err(anyhow::anyhow!(
-            "Error while fetching renew priced for domain {:?} : {:?}",
+            "Error while fetching renew price for domain {:?} : {:?}",
             &result.domain,
             e
         )),
@@ -208,25 +264,42 @@ async fn process_aggregate_result(
 pub async fn renew_domains(
     config: &Config,
     account: &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>,
+    mut aggregate_results: AggregateResults,
     logger: &Logger,
-    mut domains: (Vec<FieldElement>, Vec<FieldElement>, Vec<BigDecimal>),
 ) -> Result<()> {
     // If we have more than 400 domains to renew we make multiple transactions to avoid hitting the 2M steps limit
-    while !domains.0.is_empty() && !domains.1.is_empty() && !domains.2.is_empty() {
-        let size = domains.0.len().min(400);
-        let domains_to_renew: Vec<FieldElement> = domains.0.drain(0..size).collect();
-        let renewers = domains.1.drain(0..size).collect();
-        let limit_prices = domains.2.drain(0..size).collect();
+    while !aggregate_results.domains.is_empty()
+        && !aggregate_results.renewers.is_empty()
+        && !aggregate_results.limit_prices.is_empty()
+        && !aggregate_results.tax_prices.is_empty()
+        && !aggregate_results.meta_hashes.is_empty()
+    {
+        let size = aggregate_results.domains.len().min(400);
+        let domains_to_renew: Vec<FieldElement> =
+            aggregate_results.domains.drain(0..size).collect();
+        let renewers: Vec<FieldElement> = aggregate_results.renewers.drain(0..size).collect();
+        let limit_prices: Vec<BigDecimal> = aggregate_results.limit_prices.drain(0..size).collect();
+        let tax_prices: Vec<BigDecimal> = aggregate_results.tax_prices.drain(0..size).collect();
+        let meta_hashes: Vec<FieldElement> = aggregate_results.meta_hashes.drain(0..size).collect();
 
         match send_transaction(
             config,
             account,
-            (domains_to_renew.clone(), renewers, limit_prices),
+            AggregateResults {
+                domains: domains_to_renew.clone(),
+                renewers,
+                limit_prices,
+                tax_prices,
+                meta_hashes,
+            },
         )
         .await
         {
             Ok(_) => {
-                logger.info(format!("Sent a tx to renew {} domains", domains_to_renew.len()));
+                logger.info(format!(
+                    "Sent a tx to renew {} domains",
+                    domains_to_renew.len()
+                ));
             }
             Err(e) => {
                 logger.severe(format!(
@@ -243,20 +316,36 @@ pub async fn renew_domains(
 pub async fn send_transaction(
     config: &Config,
     account: &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>,
-    domains: (Vec<FieldElement>, Vec<FieldElement>, Vec<BigDecimal>),
+    aggregate_results: AggregateResults,
 ) -> Result<()> {
     let mut calldata: Vec<FieldElement> = Vec::new();
-    calldata.push(FieldElement::from_dec_str(&domains.0.len().to_string()).unwrap());
-    calldata.extend_from_slice(&domains.0);
-    calldata.push(FieldElement::from_dec_str(&domains.1.len().to_string()).unwrap());
-    calldata.extend_from_slice(&domains.1);
-    calldata.push(FieldElement::from_dec_str(&domains.2.len().to_string()).unwrap());
+    calldata
+        .push(FieldElement::from_dec_str(&aggregate_results.domains.len().to_string()).unwrap());
+    calldata.extend_from_slice(&aggregate_results.domains);
+    calldata
+        .push(FieldElement::from_dec_str(&aggregate_results.renewers.len().to_string()).unwrap());
+    calldata.extend_from_slice(&aggregate_results.renewers);
+    calldata.push(
+        FieldElement::from_dec_str(&aggregate_results.limit_prices.len().to_string()).unwrap(),
+    );
 
-    for limit_price in &domains.2 {
+    for limit_price in &aggregate_results.limit_prices {
         let (low, high) = to_uint256(limit_price.to_bigint().unwrap());
         calldata.push(low);
         calldata.push(high);
     }
+
+    calldata
+        .push(FieldElement::from_dec_str(&aggregate_results.tax_prices.len().to_string()).unwrap());
+    for tax_price in &aggregate_results.tax_prices {
+        let (low, high) = to_uint256(tax_price.to_bigint().unwrap());
+        calldata.push(low);
+        calldata.push(high);
+    }
+    calldata.push(
+        FieldElement::from_dec_str(&aggregate_results.meta_hashes.len().to_string()).unwrap(),
+    );
+    calldata.extend_from_slice(&aggregate_results.meta_hashes);
 
     let result = account
         .execute(vec![Call {
