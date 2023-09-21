@@ -21,7 +21,6 @@ pub mod status {
 
 mod bot;
 mod config;
-mod indexer_status;
 mod logger;
 mod models;
 mod sales_tax;
@@ -104,42 +103,58 @@ async fn main() {
         starknet::accounts::ExecutionEncoding::Legacy,
     );
 
-    let mut indexer_client = StatusClient::connect(format!(
-        "{}:{}",
-        conf.indexer_server.server_url, conf.indexer_server.port
-    ))
-    .await
-    .unwrap();
-
     logger.info("Started");
     let mut need_to_check_status = true;
-
     loop {
         if need_to_check_status {
             logger.info("Checking indexer status");
-            let request = tonic::Request::new(GetStatusRequest {});
-            match indexer_client.get_status(request).await {
-                Ok(response) => {
-                    println!("RESPONSE={:?}", response.into_inner());
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    // if status {
-                    //     need_to_check_status = false;
-                    //     logger.info("Indexer is up to date, starting renewals")
-                    // } else {
-                    //     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    //     continue;
-                    // }
-                }
-                Err(error) => {
-                    println!("ERROR={:?}", error);
-                    logger.severe(format!(
-                        "Error while checking block status: {}, retrying in 5 seconds",
-                        error
-                    ));
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let mut is_ready = true;
+            'outer: for port in &conf.indexer_server.port {
+                let indexer_client =
+                    StatusClient::connect(format!("{}:{}", conf.indexer_server.server_url, port))
+                        .await;
+                match indexer_client {
+                    Ok(mut indexer) => {
+                        let request = tonic::Request::new(GetStatusRequest {});
+                        match indexer.get_status(request).await {
+                            Ok(response) => {
+                                let res = response.into_inner();
+                                if let (Some(current_block), Some(head_block)) =
+                                    (res.current_block, res.head_block)
+                                {
+                                    if current_block < head_block {
+                                        logger.info(format!(
+                                                "Indexer on port {} is not up to date. Current block {} is lower than head block {}. Retrying in 5 seconds.",
+                                                port, current_block, head_block
+                                            ));
+                                        is_ready = false;
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                logger.severe(format!(
+                                    "Unable to connect to indexer on port {}: {}",
+                                    port, e
+                                ));
+                                is_ready = false;
+                                break 'outer;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        logger.severe(format!(
+                            "Unable to connect to indexer on port {}: {}",
+                            port, e
+                        ));
+                        continue;
+                    }
                 }
             }
-
+            if is_ready {
+                need_to_check_status = false;
+                logger.info("Indexer is up to date, starting renewals");
+            }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         } else {
             println!("[bot] Checking domains to renew");

@@ -44,7 +44,7 @@ pub_struct!(Clone, Deserialize; Renewals {
 });
 
 pub_struct!(Clone, Deserialize; IndexerServer {
-    port: u16,
+    port: Vec<u16>,
     server_url: String,
 });
 
