@@ -104,9 +104,12 @@ async fn main() {
         starknet::accounts::ExecutionEncoding::Legacy,
     );
 
-    let mut indexer_client = StatusClient::connect("http://localhost:8118")
-        .await
-        .unwrap();
+    let mut indexer_client = StatusClient::connect(format!(
+        "{}:{}",
+        conf.indexer_server.server_url, conf.indexer_server.port
+    ))
+    .await
+    .unwrap();
 
     logger.info("Started");
     let mut need_to_check_status = true;
