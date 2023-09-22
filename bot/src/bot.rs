@@ -6,63 +6,30 @@ use bson::{doc, Bson};
 use chrono::{Duration, Utc};
 use futures::TryStreamExt;
 use mongodb::options::FindOneOptions;
-use num_integer::Integer;
-use starknet::accounts::Account;
-use starknet::core::chain_id;
+use starknet::core::types::{BlockTag, FunctionCall};
 use starknet::{
-    accounts::{Call, SingleOwnerAccount},
-    core::types::{BlockId, CallFunction, FieldElement},
+    accounts::{Account, Call, SingleOwnerAccount},
+    core::types::{BlockId, FieldElement},
     macros::selector,
-    providers::{Provider, SequencerGatewayProvider},
+    providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider},
     signers::LocalWallet,
 };
-use url::Url;
+use starknet_id::encode;
 
 use crate::logger::Logger;
 use crate::models::{
     AggregateResult, AggregateResults, DomainAggregateResult, MetadataDoc, Unzip5,
 };
+use crate::starknet_utils::create_jsonrpc_client;
+use crate::utils::{hex_to_bigdecimal, to_uint256};
 use crate::{
     config::Config,
     models::{AppState, Domain},
 };
-use bigdecimal::{BigDecimal, FromPrimitive};
+use bigdecimal::BigDecimal;
 
 lazy_static::lazy_static! {
     static ref RENEW_TIME: FieldElement = FieldElement::from_dec_str("365").unwrap();
-    static ref TWO_POW_128: BigInt = BigInt::from(2).pow(128);
-}
-
-pub fn get_provider(config: &Config) -> SequencerGatewayProvider {
-    if config.devnet_provider.is_devnet {
-        SequencerGatewayProvider::new(
-            Url::from_str(&config.devnet_provider.gateway).unwrap(),
-            Url::from_str(&config.devnet_provider.feeder_gateway).unwrap(),
-        )
-    } else if config.devnet_provider.is_testnet {
-        SequencerGatewayProvider::starknet_alpha_goerli()
-    } else {
-        SequencerGatewayProvider::starknet_alpha_mainnet()
-    }
-}
-
-pub fn get_chainid(config: &Config) -> FieldElement {
-    if config.devnet_provider.is_devnet || config.devnet_provider.is_testnet {
-        chain_id::TESTNET
-    } else {
-        chain_id::MAINNET
-    }
-}
-
-fn to_uint256(n: BigInt) -> (FieldElement, FieldElement) {
-    let (n_high, n_low) = n.div_rem(&TWO_POW_128);
-    let (_, low_bytes) = n_low.to_bytes_be();
-    let (_, high_bytes) = n_high.to_bytes_be();
-
-    (
-        FieldElement::from_byte_slice_be(&low_bytes).unwrap(),
-        FieldElement::from_byte_slice_be(&high_bytes).unwrap(),
-    )
 }
 
 pub async fn get_domains_ready_for_renewal(
@@ -75,17 +42,17 @@ pub async fn get_domains_ready_for_renewal(
 
     // Define aggregate pipeline
     let pipeline = vec![
-        doc! { "$match": { "_chain.valid_to": Bson::Null } },
-        doc! { "$match": { "expiry": { "$lt": Bson::Int32((min_expiry_date.timestamp_millis() / 1000).try_into().unwrap()) } } },
+        doc! { "$match": { "_cursor.to": null } },
+        doc! { "$match": { "expiry": { "$lt": Bson::Int64(min_expiry_date.timestamp_millis() / 1000) } } },
         doc! { "$lookup": {
-            "from": "auto_renewals",
+            "from": "auto_renew_flows",
             "let": { "domain_name": "$domain" },
             "pipeline": [
                 { "$match":
                     { "$expr":
                         { "$and": [
                             { "$eq": [ "$domain",  "$$domain_name" ] },
-                            { "$eq": [ "$_chain.valid_to",  Bson::Null ] }
+                            { "$eq": [ { "$ifNull": [ "$_cursor.to", null ] }, null ] },
                         ]}
                     }
                 }
@@ -94,14 +61,14 @@ pub async fn get_domains_ready_for_renewal(
         }},
         doc! { "$unwind": "$renewal_info" },
         doc! { "$lookup": {
-            "from": "approvals",
+            "from": "auto_renew_approvals",
             "let": { "renewer_addr": "$renewal_info.renewer_address" },
             "pipeline": [
                 { "$match":
                     { "$expr":
                         { "$and": [
                             { "$eq": [ "$renewer",  "$$renewer_addr" ] },
-                            { "$eq": [ "$_chain.valid_to",  Bson::Null ] }
+                            { "$eq": [ { "$ifNull": [ "$_cursor.to", null ] }, null ] },
                         ]}
                     }
                 }
@@ -113,12 +80,12 @@ pub async fn get_domains_ready_for_renewal(
             "domain": 1,
             "expiry": 1,
             "renewer_address": "$renewal_info.renewer_address",
-            "auto_renewal_enabled": "$renewal_info.auto_renewal_enabled",
-            "approval_value": { "$ifNull": [ "$approval_info.value", "0" ] },
+            "auto_renewal_enabled": "$renewal_info.enabled",
+            "approval_value": { "$ifNull": [ "$approval_info.allowance", "0x0" ] },
             "limit_price": "$renewal_info.limit_price",
             "last_renewal": "$renewal_info.last_renewal",
             "meta_hash": "$renewal_info.meta_hash",
-            "_chain": "$renewal_info._chain",
+            "_cursor": "$renewal_info._cursor",
         }},
     ];
 
@@ -164,6 +131,7 @@ pub async fn get_domains_ready_for_renewal(
             )
         })
         .unzip5();
+
     Ok(AggregateResults {
         domains,
         renewers,
@@ -171,6 +139,36 @@ pub async fn get_domains_ready_for_renewal(
         tax_prices,
         meta_hashes,
     })
+}
+
+async fn check_user_balance(
+    config: &Config,
+    provider: JsonRpcClient<HttpTransport>,
+    addr: FieldElement,
+    limit_price: BigDecimal,
+) -> Result<Option<bool>> {
+    let call_balance = provider
+        .call(
+            FunctionCall {
+                contract_address: config.contract.erc20,
+                entry_point_selector: selector!("balanceOf"),
+                calldata: vec![addr],
+            },
+            BlockId::Tag(BlockTag::Latest),
+        )
+        .await;
+
+    match call_balance {
+        Ok(balance) => {
+            let balance = FieldElement::to_big_decimal(&balance[0], 18);
+            Ok(Some(balance >= limit_price))
+        }
+        Err(e) => Err(anyhow::anyhow!(
+            "Error while fetching balance of user {:?} : {:?}",
+            &addr,
+            e
+        )),
+    }
 }
 
 async fn process_aggregate_result(
@@ -184,71 +182,110 @@ async fn process_aggregate_result(
         return Ok(None);
     }
 
-    let renewer_addr = FieldElement::from_str(&result.renewer_address)?;
-    let allowance = BigDecimal::from_str(&result.approval_value)?;
-    let limit_price = BigDecimal::from_str(&result.limit_price)?;
+    let renewer_addr = FieldElement::from_hex_be(&result.renewer_address)?;
+    let allowance = if let Some(approval_value) = result.approval_value {
+        hex_to_bigdecimal(&approval_value).unwrap()
+    } else {
+        BigDecimal::from(0)
+    };
+    // let allowance = hex_to_bigdecimal(&result.approval_value).unwrap();
+    let limit_price = hex_to_bigdecimal(&result.limit_price).unwrap();
 
     // get renew price from contract
-    let provider = get_provider(&config);
+    let provider = create_jsonrpc_client(&config);
     let domain_name = result
         .domain
         .strip_suffix(".stark")
         .ok_or_else(|| anyhow::anyhow!("Invalid domain name: {:?}", result.domain))?;
-    let domain_encoded = starknet::id::encode(domain_name)
-        .map_err(|_| anyhow!("Failed to encode domain name"))
-        .context("Error occurred while encoding domain name")?;
+    let domain_len = domain_name.len();
 
     let call_result = provider
-        .call_contract(
-            CallFunction {
+        .call(
+            FunctionCall {
                 contract_address: config.contract.pricing,
                 entry_point_selector: selector!("compute_renew_price"),
-                calldata: vec![domain_encoded, *RENEW_TIME],
+                calldata: vec![domain_len.into(), *RENEW_TIME],
             },
-            BlockId::Latest,
+            BlockId::Tag(BlockTag::Latest),
         )
         .await;
 
     match call_result {
-        Ok(res) => {
-            let renew_price = FieldElement::to_big_decimal(&res.result[1], 18);
-            if renew_price <= allowance && renew_price <= limit_price {
-                if result.meta_hash != "0" {
-                    let decimal_val =
-                        BigInt::parse_bytes(result.meta_hash.as_str().as_bytes(), 10).unwrap();
-                    let hex_meta_hash = decimal_val.to_str_radix(16);
-                    let metadata_collection =
-                        state.db_metadata.collection::<MetadataDoc>("metadata");
-                    if let Some(document) = metadata_collection
-                        .find_one(doc! {"meta_hash": hex_meta_hash}, FindOneOptions::default())
-                        .await?
-                    {
-                        let tax_state = document.tax_state;
-                        if let Some(state_info) = state.states.states.get(&tax_state) {
-                            let tax_rate = (state_info.rate * 100.0).round() as i32;
-                            let tax_price =
-                                (renew_price * BigDecimal::from(tax_rate)) / BigDecimal::from(100);
-                            return Ok(Some(AggregateResult {
-                                domain: domain_encoded,
-                                renewer_addr,
-                                limit_price,
-                                tax_price,
-                                meta_hash: FieldElement::from_dec_str(&result.meta_hash)?,
-                            }));
+        Ok(price) => {
+            let renew_price = FieldElement::to_big_decimal(&price[1], 18);
+            // Check user has enough allowance
+            if renew_price <= allowance {
+                // Check limit_price is not lower than renew_price
+                if renew_price <= limit_price {
+                    // check user balance is greater or equal than limit_price
+                    let has_funds =
+                        check_user_balance(config, provider, renewer_addr, limit_price.clone())
+                            .await?;
+                    if let Some(false) = has_funds {
+                    logger.warning(format!(
+                        "Domain {} cannot be renewed because {} has not enough balance",
+                        result.domain, result.renewer_address
+                    ));
+                        return Ok(None);
+                    }
+
+                    // encode domain name
+                    let domain_encoded = encode(domain_name)
+                        .map_err(|_| anyhow!("Failed to encode domain name"))
+                        .context("Error occurred while encoding domain name")?;
+                    // Check user meta_hash
+                    if let Some(meta_hash) = result.meta_hash {
+                        if meta_hash != "0" {
+                            let decimal_meta_hash = BigInt::parse_bytes(
+                                meta_hash.trim_start_matches("0x").as_bytes(),
+                                16,
+                            )
+                            .unwrap();
+                            let hex_meta_hash = decimal_meta_hash.to_str_radix(16);
+                            let metadata_collection =
+                                state.db_metadata.collection::<MetadataDoc>("metadata");
+                            if let Some(document) = metadata_collection
+                                .find_one(
+                                    doc! {"meta_hash": hex_meta_hash},
+                                    FindOneOptions::default(),
+                                )
+                                .await?
+                            {
+                                let tax_state = document.tax_state;
+                                if let Some(state_info) = state.states.states.get(&tax_state) {
+                                    let tax_rate = (state_info.rate * 100.0).round() as i32;
+                                    let tax_price = (renew_price * BigDecimal::from(tax_rate))
+                                        / BigDecimal::from(100);
+                                    return Ok(Some(AggregateResult {
+                                        domain: domain_encoded,
+                                        renewer_addr,
+                                        limit_price,
+                                        tax_price,
+                                        meta_hash: FieldElement::from_hex_be(&meta_hash)?,
+                                    }));
+                                }
+                            }
                         }
                     }
+
+                    Ok(Some(AggregateResult {
+                        domain: domain_encoded,
+                        renewer_addr,
+                        limit_price,
+                        tax_price: BigDecimal::from(0),
+                        meta_hash: FieldElement::from_str("0")?,
+                    }))
+                } else {
+                    logger.warning(format!(
+                        "Domain {} cannot be renewed because {} has set a limit_price({}) lower than domain price({})",
+                        result.domain, result.renewer_address, limit_price, renew_price
+                    ));
+                    Ok(None)
                 }
-                Ok(Some(AggregateResult {
-                    domain: domain_encoded,
-                    renewer_addr,
-                    limit_price,
-                    tax_price: BigDecimal::from(0),
-                    meta_hash: FieldElement::from_str("0")?,
-                }))
             } else {
                 logger.warning(format!(
-                    "Domain {} cannot be renewed because {} has not enough allowance",
-                    result.domain, result.renewer_address
+                    "Domain {} cannot be renewed because {} has not enough allowance ({})",
+                    result.domain, result.renewer_address, allowance
                 ));
                 Ok(None)
             }
@@ -263,7 +300,7 @@ async fn process_aggregate_result(
 
 pub async fn renew_domains(
     config: &Config,
-    account: &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>,
+    account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     mut aggregate_results: AggregateResults,
     logger: &Logger,
 ) -> Result<()> {
@@ -315,7 +352,7 @@ pub async fn renew_domains(
 
 pub async fn send_transaction(
     config: &Config,
-    account: &SingleOwnerAccount<SequencerGatewayProvider, LocalWallet>,
+    account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     aggregate_results: AggregateResults,
 ) -> Result<()> {
     let mut calldata: Vec<FieldElement> = Vec::new();

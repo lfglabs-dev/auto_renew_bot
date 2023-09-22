@@ -35,9 +35,9 @@ pub struct AutoRenewals {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Chain {
-    pub valid_to: Option<u32>,
-    pub valid_from: Option<u32>,
+pub struct Cursor {
+    pub to: Option<i64>,
+    pub from: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -46,11 +46,11 @@ pub struct DomainAggregateResult {
     pub expiry: Option<i32>,
     pub renewer_address: String,
     pub auto_renewal_enabled: bool,
-    pub approval_value: String,
+    pub approval_value: Option<String>,
     pub limit_price: String,
-    pub last_renewal: String,
-    pub meta_hash: String,
-    pub _chain: Chain,
+    pub last_renewal: Option<i64>,
+    pub meta_hash: Option<String>,
+    pub _cursor: Cursor,
 }
 
 pub struct AggregateResult {

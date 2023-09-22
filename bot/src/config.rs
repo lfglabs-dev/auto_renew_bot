@@ -34,13 +34,6 @@ pub_struct!(Clone, Deserialize; Database {
     connection_string_metadata: String,
 });
 
-pub_struct!(Clone, Deserialize; DevnetProvider {
-    is_devnet: bool,
-    is_testnet: bool,
-    gateway: String,
-    feeder_gateway: String,
-});
-
 pub_struct!(Clone, Deserialize; MyAccount {
     private_key: FieldElement,
     address: FieldElement,
@@ -51,8 +44,12 @@ pub_struct!(Clone, Deserialize; Renewals {
 });
 
 pub_struct!(Clone, Deserialize; IndexerServer {
-    port: u16,
+    port: Vec<u16>,
     server_url: String,
+});
+
+pub_struct!(Clone, Deserialize; Rpc {
+    rpc_url: String,
 });
 
 pub_struct!(Clone, Deserialize; Watchtower {
@@ -72,10 +69,10 @@ pub_struct!(Clone, Deserialize; Config {
     apibara: Apibara,
     contract: Contract,
     database: Database,
-    devnet_provider: DevnetProvider,
     account: MyAccount,
     renewals : Renewals,
     indexer_server: IndexerServer,
+    rpc: Rpc,
     watchtower: Watchtower,
 });
 
