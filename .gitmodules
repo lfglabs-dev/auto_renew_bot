@@ -1,3 +1,0 @@
-[submodule "indexer"]
-	path = indexer
-	url = git@github.com:starknet-id/auto_renew_indexer.git

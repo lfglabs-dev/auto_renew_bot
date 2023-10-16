@@ -45,9 +45,9 @@ pub struct DomainAggregateResult {
     pub domain: String,
     pub expiry: Option<i32>,
     pub renewer_address: String,
-    pub auto_renewal_enabled: bool,
+    pub enabled: bool,
     pub approval_value: Option<String>,
-    pub limit_price: String,
+    pub allowance: Option<String>,
     pub last_renewal: Option<i64>,
     pub meta_hash: Option<String>,
     pub _cursor: Cursor,
@@ -56,7 +56,7 @@ pub struct DomainAggregateResult {
 pub struct AggregateResult {
     pub domain: FieldElement,
     pub renewer_addr: FieldElement,
-    pub limit_price: BigDecimal,
+    pub domain_price: BigDecimal,
     pub tax_price: BigDecimal,
     pub meta_hash: FieldElement,
 }
@@ -65,7 +65,7 @@ pub struct AggregateResult {
 pub struct AggregateResults {
     pub domains: Vec<FieldElement>,
     pub renewers: Vec<FieldElement>,
-    pub limit_prices: Vec<BigDecimal>,
+    pub domain_prices: Vec<BigDecimal>,
     pub tax_prices: Vec<BigDecimal>,
     pub meta_hashes: Vec<FieldElement>,
 }

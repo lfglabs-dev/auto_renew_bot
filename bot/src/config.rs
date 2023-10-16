@@ -12,13 +12,6 @@ macro_rules! pub_struct {
     }
 }
 
-pub_struct!(Clone, Deserialize; Apibara {
-    finality: String,
-    starting_block: u64,
-    batch_size: u64,
-    stream: String,
-});
-
 pub_struct!(Clone, Deserialize; Contract {
     starknetid: FieldElement,
     naming: FieldElement,
@@ -66,7 +59,6 @@ pub_struct!(Clone, Deserialize; WatchtowerTypes {
 });
 
 pub_struct!(Clone, Deserialize; Config {
-    apibara: Apibara,
     contract: Contract,
     database: Database,
     account: MyAccount,
