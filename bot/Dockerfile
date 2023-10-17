@@ -13,6 +13,7 @@ COPY config.toml bot/Cargo.toml bot/build.rs ./
 # Copy the source code and proto directory
 COPY bot/src ./src
 COPY bot/proto ./proto
+COPY bot/src/sales_tax.json ./bot/src/sales_tax.json
 
 # Build the application in release mode
 RUN cargo build --release
