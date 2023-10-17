@@ -43,6 +43,7 @@ struct LogPayload<'a> {
 
 #[tokio::main]
 async fn main() {
+    println!("HELLO WORLD");
     let conf = config::load();
     let logger = logger::Logger::new(&conf.watchtower);
 

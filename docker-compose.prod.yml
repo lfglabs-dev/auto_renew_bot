@@ -1,26 +1,10 @@
-version: '3'
+version: "3"
 
 services:
-
   bot:
     container_name: bot
-    build: 
+    build:
       context: .
       dockerfile: ./bot/Dockerfile
     command: ./target/release/bot
     restart: "no"
-
-  nginx:
-    image: valian/docker-nginx-auto-ssl
-    restart: on-failure
-    ports:
-      - 80:80
-      - 443:443
-    volumes:
-      - ssl_data:/etc/resty-auto-ssl
-    environment:
-      ALLOWED_DOMAINS: "indexer.renewal.starknet.id"
-      SITES: "indexer.renewal.starknet.id=indexer:8090"
-
-volumes:
-  ssl_data:
