@@ -4,16 +4,13 @@ FROM rust:latest
 # Set the working directory
 WORKDIR .
 
-# Copy the Cargo.toml and Cargo.lock files
-COPY bot/Cargo.toml config.toml ./
-
 # Copy the source code
-COPY bot/src ./src
+COPY bot/ .
 
 # Build the application in release mode
 RUN cargo build --release
 
-# Expose the port your application uses (replace 8083 with your app's port)
+# Expose the port your application uses
 EXPOSE 8080
 
 # Set the unbuffered environment variable

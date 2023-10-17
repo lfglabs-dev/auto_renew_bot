@@ -2,27 +2,6 @@ version: '3'
 
 services:
 
-  mongo:
-    image: mongo:latest
-    restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: auto_renew
-      MONGO_INITDB_ROOT_PASSWORD: password
-    ports:
-      - 0.0.0.0:27017:27017
-
-  indexer:
-    container_name: indexer
-    build:
-      context: ./indexer
-      dockerfile: Dockerfile
-    command: python -u indexer
-    restart: always
-    links:
-      - mongo
-    expose:
-      - 8090
-
   bot:
     container_name: bot
     build: 
@@ -30,9 +9,6 @@ services:
       dockerfile: ./bot/Dockerfile
     command: ./target/release/bot
     restart: "no"
-    links:
-      - indexer
-      - mongo
 
   nginx:
     image: valian/docker-nginx-auto-ssl
