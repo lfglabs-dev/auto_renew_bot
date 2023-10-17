@@ -8,6 +8,7 @@ use crate::config::Watchtower;
 
 // Logger structure
 pub struct Logger {
+    enabled: bool,
     config: Arc<Watchtower>,
     client: Arc<reqwest::Client>,
 }
@@ -38,6 +39,7 @@ impl Logger {
     pub fn new(config: &Watchtower) -> Self {
         env_logger::init();
         Logger {
+            enabled: config.enabled,
             config: Arc::new(config.clone()),
             client: Arc::new(reqwest::Client::new()),
         }
@@ -80,7 +82,9 @@ impl Logger {
         S: Into<Cow<'static, str>> + std::fmt::Display + Send + 'static,
     {
         println!("INFO: {}", &message);
-        self.post_log(LogType::Info, message.into()).await;
+        if self.config.enabled {
+            self.post_log(LogType::Info, message.into()).await;
+        }
     }
 
     pub async fn async_warning<S>(&self, message: S)
@@ -88,7 +92,9 @@ impl Logger {
         S: Into<Cow<'static, str>> + std::fmt::Display + Send + 'static,
     {
         println!("WARNING: {}", &message);
-        self.post_log(LogType::Warning, message.into()).await;
+        if self.config.enabled {
+            self.post_log(LogType::Warning, message.into()).await;
+        }
     }
 
     pub async fn async_severe<S>(&self, message: S)
@@ -96,7 +102,9 @@ impl Logger {
         S: Into<Cow<'static, str>> + std::fmt::Display + Send + 'static,
     {
         println!("SEVERE: {}", &message);
-        self.post_log(LogType::Severe, message.into()).await;
+        if self.config.enabled {
+            self.post_log(LogType::Severe, message.into()).await;
+        }
     }
 
     pub fn info<S>(&self, message: S)
@@ -141,6 +149,7 @@ impl Logger {
 impl Clone for Logger {
     fn clone(&self) -> Self {
         Logger {
+            enabled: self.enabled,
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
         }
