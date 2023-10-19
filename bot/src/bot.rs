@@ -160,7 +160,7 @@ async fn check_user_balance(
 
     match call_balance {
         Ok(balance) => {
-            let balance = FieldElement::to_big_decimal(&balance[0], 18);
+            let balance = BigDecimal::from_str(&FieldElement::to_string(&balance[0])).unwrap();
             Ok(Some(balance >= allowance))
         }
         Err(e) => Err(anyhow::anyhow!(
@@ -211,7 +211,8 @@ async fn process_aggregate_result(
 
     match call_result {
         Ok(price) => {
-            let renew_price = FieldElement::to_big_decimal(&price[1], 18);
+            let price_str = FieldElement::to_string(&price[1]);
+            let renew_price = BigDecimal::from_str(&price_str).unwrap();
 
             // Check user meta hash
             let mut tax_price = BigDecimal::from(0);
