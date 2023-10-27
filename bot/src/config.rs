@@ -18,6 +18,7 @@ pub_struct!(Clone, Deserialize; Contract {
     renewal: FieldElement,
     erc20: FieldElement,
     pricing: FieldElement,
+    multicall: FieldElement,
 });
 
 pub_struct!(Clone, Deserialize; Database {
