@@ -1,4 +1,6 @@
-use bigdecimal::{num_bigint::BigInt, BigDecimal};
+use std::ops::Mul;
+
+use bigdecimal::{num_bigint::BigInt, num_traits::CheckedMul, BigDecimal};
 use num_integer::Integer;
 use starknet::core::types::FieldElement;
 
@@ -20,4 +22,17 @@ pub fn to_uint256(n: BigInt) -> (FieldElement, FieldElement) {
 pub fn hex_to_bigdecimal(hex: &str) -> Option<BigDecimal> {
     let without_prefix = hex.trim_start_matches("0x");
     BigInt::parse_bytes(without_prefix.as_bytes(), 16).map(BigDecimal::from)
+}
+
+pub fn from_uint256(low: FieldElement, high: FieldElement) -> BigInt {
+    let low_bigint = BigInt::from_bytes_be(
+        bigdecimal::num_bigint::Sign::Plus,
+        &FieldElement::to_bytes_be(&low),
+    );
+    let high_bigint = BigInt::from_bytes_be(
+        bigdecimal::num_bigint::Sign::Plus,
+        &FieldElement::to_bytes_be(&high),
+    );
+
+    &high_bigint.checked_mul(&TWO_POW_128).unwrap() + low_bigint
 }
