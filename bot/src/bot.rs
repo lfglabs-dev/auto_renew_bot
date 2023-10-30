@@ -143,7 +143,8 @@ pub async fn get_domains_ready_for_renewal(
                 balances_iter.next().expect("Expected low not found"),
                 balances_iter.next().expect("Expected high not found"),
             );
-            domains_iter.next(); // we skip the first result as its value is 2 for low and high
+            domains_iter.next(); // we skip the first result as its value is 3 for erc20_contract_address, low and high
+            domains_iter.next(); // we skip the first result as its value is erc20_contract_address
             let renewal_price = from_uint256(
                 domains_iter
                     .next()
