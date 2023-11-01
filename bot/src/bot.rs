@@ -356,14 +356,14 @@ pub async fn renew_domains(
     mut aggregate_results: AggregateResults,
     logger: &Logger,
 ) -> Result<()> {
-    // If we have more than 400 domains to renew we make multiple transactions to avoid hitting the 2M steps limit
+    // If we have more than 75 domains to renew we make multiple transactions to avoid hitting the 3M steps limit
     while !aggregate_results.domains.is_empty()
         && !aggregate_results.renewers.is_empty()
         && !aggregate_results.domain_prices.is_empty()
         && !aggregate_results.tax_prices.is_empty()
         && !aggregate_results.meta_hashes.is_empty()
     {
-        let size = aggregate_results.domains.len().min(400);
+        let size = aggregate_results.domains.len().min(75);
         let domains_to_renew: Vec<FieldElement> =
             aggregate_results.domains.drain(0..size).collect();
         let renewers: Vec<FieldElement> = aggregate_results.renewers.drain(0..size).collect();
