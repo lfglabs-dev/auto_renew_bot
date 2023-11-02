@@ -303,6 +303,10 @@ async fn process_aggregate_result(
             }
         }
     }
+    // println!("tax_price: {:?}", tax_price);
+    // println!("renewal_price: {:?}", renewal_price);
+    // println!("erc20_allowance: {:?}", erc20_allowance);
+    // println!("allowance: {:?}", allowance);
     let final_price = renewal_price.clone() + tax_price.clone();
 
     // Check user ETH allowance is greater or equal than final price = renew_price + tax_price
@@ -326,7 +330,6 @@ async fn process_aggregate_result(
             let domain_encoded = encode(domain_name)
                 .map_err(|_| anyhow!("Failed to encode domain name"))
                 .context("Error occurred while encoding domain name")?;
-
             Ok(Some(AggregateResult {
                 domain: domain_encoded,
                 renewer_addr,
@@ -356,7 +359,7 @@ pub async fn renew_domains(
     mut aggregate_results: AggregateResults,
     logger: &Logger,
 ) -> Result<()> {
-    // If we have more than 75 domains to renew we make multiple transactions to avoid hitting the 3M steps limit
+    // If we have: i32 more than 75 domains to renew we make multiple transactions to avoid hitting the 3M steps limit
     while !aggregate_results.domains.is_empty()
         && !aggregate_results.renewers.is_empty()
         && !aggregate_results.domain_prices.is_empty()
