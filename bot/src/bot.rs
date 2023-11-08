@@ -131,7 +131,6 @@ pub async fn get_domains_ready_for_renewal(
     // Fetch renew price for all domains
     let domains_to_renew: Vec<String> =
         results.iter().map(|result| result.domain.clone()).collect();
-    println!("domains_to_renew: {:?}", domains_to_renew);
     let domain_prices = fetch_domain_prices(config, domains_to_renew.clone()).await;
     if domain_prices.is_empty() {
         logger.severe(format!(
