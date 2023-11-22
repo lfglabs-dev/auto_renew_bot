@@ -1,5 +1,7 @@
 backups/**
 config.toml
+.ssh-connection*
+.deployments
 *.csv
 
 ### Linux ###
