@@ -38,7 +38,7 @@ pub async fn get_domains_ready_for_renewal(
     logger: &Logger,
 ) -> Result<AggregateResults> {
     let auto_renews_collection = state.db.collection::<Domain>("auto_renew_flows");
-    let min_expiry_date = Utc::now() + Duration::days(60);
+    let min_expiry_date = Utc::now() + Duration::days(30);
 
     // Define aggregate pipeline
     let pipeline = vec![
