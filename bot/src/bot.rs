@@ -37,15 +37,15 @@ pub async fn get_domains_ready_for_renewal(
     state: &Arc<AppState>,
     logger: &Logger,
 ) -> Result<AggregateResults> {
-    let domains = state.db.collection::<Domain>("domains");
-    let min_expiry_date = Utc::now() + Duration::days(30);
+    let auto_renews_collection = state.db.collection::<Domain>("auto_renew_flows");
+    let min_expiry_date = Utc::now() + Duration::days(60);
 
     // Define aggregate pipeline
     let pipeline = vec![
         doc! { "$match": { "_cursor.to": null } },
-        doc! { "$match": { "expiry": { "$lt": Bson::Int64(min_expiry_date.timestamp_millis() / 1000) } } },
+        doc! { "$match": { "enabled": true } },
         doc! { "$lookup": {
-            "from": "auto_renew_flows",
+            "from": "domains",
             "let": { "domain_name": "$domain" },
             "pipeline": [
                 { "$match":
@@ -55,14 +55,15 @@ pub async fn get_domains_ready_for_renewal(
                             { "$eq": [ { "$ifNull": [ "$_cursor.to", null ] }, null ] },
                         ]}
                     }
-                }
+                },
             ],
-            "as": "renewal_info",
+            "as": "domain_info",
         }},
-        doc! { "$unwind": "$renewal_info" },
+        doc! { "$unwind": "$domain_info" },
+        doc! { "$match": { "domain_info.expiry": { "$lt": Bson::Int64(min_expiry_date.timestamp_millis() / 1000) } } },
         doc! { "$lookup": {
             "from": "auto_renew_approvals",
-            "let": { "renewer_addr": "$renewal_info.renewer_address" },
+            "let": { "renewer_addr": "$renewer_address" },
             "pipeline": [
                 { "$match":
                     { "$expr":
@@ -77,15 +78,15 @@ pub async fn get_domains_ready_for_renewal(
         }},
         doc! { "$unwind": { "path": "$approval_info", "preserveNullAndEmptyArrays": true } },
         doc! { "$group": {
-            "_id": "$domain",
-            "expiry": { "$first": "$expiry" },
-            "renewer_address": { "$first": "$renewal_info.renewer_address" },
-            "enabled": { "$first": "$renewal_info.enabled" },
+            "_id": "$domain_info.domain",
+            "expiry": { "$first": "$domain_info.expiry" },
+            "renewer_address": { "$first": "$renewer_address" },
+            "enabled": { "$first": "$enabled" },
             "approval_value": { "$first": { "$ifNull": [ "$approval_info.allowance", "0x0" ] } },
-            "allowance": { "$first": "$renewal_info.allowance" },
-            "last_renewal": { "$first": "$renewal_info.last_renewal" },
-            "meta_hash": { "$first": "$renewal_info.meta_hash" },
-            "_cursor": { "$first": "$renewal_info._cursor" },
+            "allowance": { "$first": "$allowance" },
+            "last_renewal": { "$first": "$last_renewal" },
+            "meta_hash": { "$first": "$meta_hash" },
+            "_cursor": { "$first": "$_cursor" },
         }},
         doc! { "$project": {
             "_id": 0,
@@ -102,7 +103,7 @@ pub async fn get_domains_ready_for_renewal(
     ];
 
     // Execute the pipeline
-    let cursor = domains.aggregate(pipeline, None).await?;
+    let cursor = auto_renews_collection.aggregate(pipeline, None).await?;
     // Extract the results as Vec<bson::Document>
     let bson_docs: Vec<bson::Document> = cursor.try_collect().await?;
     // Convert each bson::Document into DomainAggregateResult
@@ -260,7 +261,7 @@ async fn fetch_domain_prices(config: &Config, domains: Vec<String>) -> Vec<Field
         calls.push(config.contract.pricing);
         calls.push(selector!("compute_renew_price"));
         calls.push(FieldElement::TWO);
-        calls.push(domain_name.len().into());
+        calls.push(encode(domain_name).unwrap());
         calls.push(*RENEW_TIME);
     }
 
@@ -325,10 +326,6 @@ async fn process_aggregate_result(
             }
         }
     }
-    // println!("tax_price: {:?}", tax_price);
-    // println!("renewal_price: {:?}", renewal_price);
-    // println!("erc20_allowance: {:?}", erc20_allowance);
-    // println!("allowance: {:?}", allowance);
     let final_price = renewal_price.clone() + tax_price.clone();
 
     // Check user ETH allowance is greater or equal than final price = renew_price + tax_price
@@ -368,8 +365,8 @@ async fn process_aggregate_result(
         }
     } else {
         logger.warning(format!(
-            "Domain {} cannot be renewed because {} has set an allowance ({}) lower than domain price({}) + tax({})",
-            result.domain, result.renewer_address, final_price, renewal_price, tax_price
+            "Domain {} cannot be renewed because {} has set an erc20_allowance ({}) lower than domain price({}) + tax({})",
+            result.domain, result.renewer_address, erc20_allowance, renewal_price, tax_price
         ));
         Ok(None)
     }
@@ -462,20 +459,24 @@ pub async fn send_transaction(
     );
     calldata.extend_from_slice(&aggregate_results.meta_hashes);
 
-    let result = account
-        .execute(vec![Call {
-            to: config.contract.renewal,
-            selector: selector!("batch_renew"),
-            calldata,
-        }])
-        .send()
-        .await;
+    println!("calldata: {:?}", calldata);
 
-    match result {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            let error_message = format!("An error occurred while renewing domains: {}", e);
-            Err(anyhow::anyhow!(error_message))
-        }
-    }
+    Ok(())
+
+    // let result = account
+    //     .execute(vec![Call {
+    //         to: config.contract.renewal,
+    //         selector: selector!("batch_renew"),
+    //         calldata,
+    //     }])
+    //     .send()
+    //     .await;
+
+    // match result {
+    //     Ok(_) => Ok(()),
+    //     Err(e) => {
+    //         let error_message = format!("An error occurred while renewing domains: {}", e);
+    //         Err(anyhow::anyhow!(error_message))
+    //     }
+    // }
 }
