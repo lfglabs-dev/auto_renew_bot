@@ -113,6 +113,16 @@ pub async fn get_domains_ready_for_renewal(
     // Check if the conversion was successful
     let results = results?;
 
+    if results.is_empty() {
+        return Ok(AggregateResults {
+            domains: vec![],
+            renewers: vec![],
+            domain_prices: vec![],
+            tax_prices: vec![],
+            meta_hashes: vec![],
+        });
+    }
+
     // Fetch balances for all renewers
     let renewer_addresses: Vec<String> = results
         .iter()
