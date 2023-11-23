@@ -459,24 +459,20 @@ pub async fn send_transaction(
     );
     calldata.extend_from_slice(&aggregate_results.meta_hashes);
 
-    println!("calldata: {:?}", calldata);
+    let result = account
+        .execute(vec![Call {
+            to: config.contract.renewal,
+            selector: selector!("batch_renew"),
+            calldata,
+        }])
+        .send()
+        .await;
 
-    Ok(())
-
-    // let result = account
-    //     .execute(vec![Call {
-    //         to: config.contract.renewal,
-    //         selector: selector!("batch_renew"),
-    //         calldata,
-    //     }])
-    //     .send()
-    //     .await;
-
-    // match result {
-    //     Ok(_) => Ok(()),
-    //     Err(e) => {
-    //         let error_message = format!("An error occurred while renewing domains: {}", e);
-    //         Err(anyhow::anyhow!(error_message))
-    //     }
-    // }
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let error_message = format!("An error occurred while renewing domains: {}", e);
+            Err(anyhow::anyhow!(error_message))
+        }
+    }
 }
