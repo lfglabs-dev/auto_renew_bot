@@ -100,7 +100,7 @@ async fn main() {
         signer,
         conf.account.address,
         chainid,
-        starknet::accounts::ExecutionEncoding::Legacy,
+        starknet::accounts::ExecutionEncoding::New,
     );
 
     logger.info("Started");
