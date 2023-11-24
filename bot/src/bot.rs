@@ -114,6 +114,8 @@ pub async fn get_domains_ready_for_renewal(
     // Check if the conversion was successful
     let results = results?;
 
+    println!("Results received from database: {:?}", results);
+
     if results.is_empty() {
         return Ok(AggregateResults {
             domains: vec![],
@@ -146,7 +148,7 @@ pub async fn get_domains_ready_for_renewal(
     if domain_prices.is_empty() {
         logger.severe(format!(
             "Error while fetching domain prices for {} users : {:?}",
-            domain_prices.len(),
+            domains_to_renew.len(),
             domain_prices
         ));
         return Err(anyhow!("Error while fetching domain_prices"));
@@ -290,6 +292,7 @@ async fn process_aggregate_result(
     balance: BigDecimal,
     renewal_price: BigDecimal,
 ) -> Result<Option<AggregateResult>> {
+    println!("Processing domain: {:?}", result.domain);
     // Skip the rest if auto-renewal is not enabled
     if !result.enabled || result.allowance.is_none() {
         return Ok(None);
@@ -328,6 +331,11 @@ async fn process_aggregate_result(
     }
     let final_price = renewal_price.clone() + tax_price.clone();
 
+    println!("renewal_price: {:?}", renewal_price);
+    println!("tax_price: {:?}", tax_price);
+    println!("final_price: {:?}", final_price);
+    println!("balance: {:?}", balance);
+
     // Check user ETH allowance is greater or equal than final price = renew_price + tax_price
     if erc20_allowance >= final_price {
         // check user allowance is greater or equal than final price
@@ -349,6 +357,7 @@ async fn process_aggregate_result(
             let domain_encoded = encode(domain_name)
                 .map_err(|_| anyhow!("Failed to encode domain name"))
                 .context("Error occurred while encoding domain name")?;
+            println!("domain_encoded: {:?}", domain_encoded);
             Ok(Some(AggregateResult {
                 domain: domain_encoded,
                 renewer_addr,
@@ -458,6 +467,8 @@ pub async fn send_transaction(
         FieldElement::from_dec_str(&aggregate_results.meta_hashes.len().to_string()).unwrap(),
     );
     calldata.extend_from_slice(&aggregate_results.meta_hashes);
+
+    println!("calldata: {:?}", calldata);
 
     let result = account
         .execute(vec![Call {
