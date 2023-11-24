@@ -416,9 +416,10 @@ pub async fn renew_domains(
         )
         .await
         {
-            Ok(_) => {
+            Ok(tx_hash) => {
                 logger.info(format!(
-                    "Sent a tx to renew {} domains",
+                    "Sent a tx {} to renew {} domains",
+                    FieldElement::to_string(&tx_hash),
                     domains_to_renew.len()
                 ));
             }
@@ -438,7 +439,7 @@ pub async fn send_transaction(
     config: &Config,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     aggregate_results: AggregateResults,
-) -> Result<()> {
+) -> Result<FieldElement> {
     let mut calldata: Vec<FieldElement> = Vec::new();
     calldata
         .push(FieldElement::from_dec_str(&aggregate_results.domains.len().to_string()).unwrap());
@@ -480,7 +481,7 @@ pub async fn send_transaction(
         .await;
 
     match result {
-        Ok(_) => Ok(()),
+        Ok(tx_result) => Ok(tx_result.transaction_hash),
         Err(e) => {
             let error_message = format!("An error occurred while renewing domains: {}", e);
             Err(anyhow::anyhow!(error_message))
