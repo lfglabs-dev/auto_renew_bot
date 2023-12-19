@@ -1,6 +1,4 @@
-use std::ops::Mul;
-
-use bigdecimal::{num_bigint::BigInt, num_traits::CheckedMul, BigDecimal};
+use bigdecimal::{num_bigint::BigInt, BigDecimal};
 use num_integer::Integer;
 use starknet::core::types::FieldElement;
 

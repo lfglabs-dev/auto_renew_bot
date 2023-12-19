@@ -160,7 +160,7 @@ async fn main() {
             println!("[bot] Checking domains to renew");
             match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
                 Ok(aggregate_results) => {
-                    println!("[bot] checking domains to renew today");
+                    //println!("[bot] checking domains to renew today");
                     if !aggregate_results.domains.is_empty() {
                         match renew_domains(&conf, &account, aggregate_results.clone(), &logger)
                             .await
