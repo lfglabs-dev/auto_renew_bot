@@ -42,7 +42,7 @@ pub async fn get_domains_ready_for_renewal(
 ) -> Result<AggregateResults> {
     let auto_renews_collection = state.db.collection::<Domain>("auto_renew_flows");
     let min_expiry_date = Utc::now() + Duration::days(30);
-
+    println!("timestamp: {}", min_expiry_date.timestamp());
     // Define aggregate pipeline
     let pipeline = vec![
         doc! { "$match": { "_cursor.to": null } },
@@ -63,7 +63,7 @@ pub async fn get_domains_ready_for_renewal(
             "as": "domain_info",
         }},
         doc! { "$unwind": "$domain_info" },
-        doc! { "$match": { "domain_info.expiry": { "$lt": Bson::Int64(min_expiry_date.timestamp_millis() / 1000) } } },
+        doc! { "$match": { "domain_info.expiry": { "$lt": Bson::Int64(min_expiry_date.timestamp()) } } },
         doc! { "$lookup": {
             "from": "auto_renew_approvals",
             "let": { "renewer_addr": "$renewer_address" },
@@ -450,7 +450,7 @@ pub async fn renew_domains(
         {
             Ok(tx_hash) => {
                 logger.info(format!(
-                    "Sent a tx {} to renew {} domains",
+                    "Sent a tx {} to renew {:x} domains",
                     FieldElement::to_string(&tx_hash),
                     domains_to_renew.len()
                 ));
@@ -482,6 +482,31 @@ pub async fn send_transaction(
     calldata.push(
         FieldElement::from_dec_str(&aggregate_results.domain_prices.len().to_string()).unwrap(),
     );
+
+    println!("domains:");
+    for x in &aggregate_results.domains {
+        println!("{}", x);
+    }
+
+    println!("renewers:");
+    for x in &aggregate_results.renewers {
+        println!("{}", x);
+    }
+
+    println!("domain_prices:");
+    for x in &aggregate_results.domain_prices {
+        println!("{}", x);
+    }
+
+    println!("tax_prices:");
+    for x in &aggregate_results.tax_prices {
+        println!("{}", x);
+    }
+
+    println!("meta_hashes:");
+    for x in &aggregate_results.meta_hashes {
+        println!("{}", x);
+    }
 
     for limit_price in &aggregate_results.domain_prices {
         let (low, high) = to_uint256(limit_price.to_bigint().unwrap());
