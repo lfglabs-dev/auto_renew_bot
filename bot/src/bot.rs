@@ -450,8 +450,8 @@ pub async fn renew_domains(
         {
             Ok(tx_hash) => {
                 logger.info(format!(
-                    "Sent a tx {} to renew {:x} domains",
-                    FieldElement::to_string(&tx_hash),
+                    "Sent a tx {:x} to renew {:x} domains",
+                    &tx_hash,
                     domains_to_renew.len()
                 ));
             }
@@ -532,6 +532,7 @@ pub async fn send_transaction(
             selector: selector!("batch_renew"),
             calldata,
         }])
+        .max_fee(FieldElement::from_dec_str("10360501002400840").unwrap())
         .send()
         .await;
 
