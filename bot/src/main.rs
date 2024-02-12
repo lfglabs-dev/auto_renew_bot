@@ -25,6 +25,7 @@ mod logger;
 mod models;
 mod sales_tax;
 mod starknet_utils;
+mod starknetid_utils;
 mod utils;
 
 #[derive(Serialize)]
