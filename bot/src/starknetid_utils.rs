@@ -8,12 +8,11 @@ lazy_static::lazy_static! {
     static ref PRICE_DOMAIN: BigInt = BigInt::from_u128(24657534246575 * 365).unwrap();
 }
 
-
 pub fn get_renewal_price(domain: String) -> BigInt {
     let domain_name = domain
-            .strip_suffix(".stark")
-            .ok_or_else(|| anyhow::anyhow!("Invalid domain name: {:?}", domain))
-            .unwrap();
+        .strip_suffix(".stark")
+        .ok_or_else(|| anyhow::anyhow!("Invalid domain name: {:?}", domain))
+        .unwrap();
     let domain_len = domain_name.len();
     match domain_len {
         1 => PRICE_DOMAIN_LEN_1.clone(),

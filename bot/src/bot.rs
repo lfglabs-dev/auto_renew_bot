@@ -3,7 +3,10 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Context, Result};
-use bigdecimal::{BigDecimal, num_bigint::{BigInt, ToBigInt}};
+use bigdecimal::{
+    num_bigint::{BigInt, ToBigInt},
+    BigDecimal,
+};
 use bson::{doc, Bson};
 use chrono::{Duration, Utc};
 use futures::stream::{self, StreamExt};
@@ -133,7 +136,7 @@ pub async fn get_domains_ready_for_renewal(
         .map(|result| result.renewer_address.clone())
         .collect();
     // Batch calls to fetch balances to max 5000 addresses per call
-    let mut balances : Vec<FieldElement> = vec![];
+    let mut balances: Vec<FieldElement> = vec![];
     let mut renewer_addresses_batch = renewer_addresses.clone();
     while !renewer_addresses_batch.is_empty() {
         let size = renewer_addresses_batch.len().min(5000);
@@ -153,7 +156,6 @@ pub async fn get_domains_ready_for_renewal(
 
     let dynamic_balances = Arc::new(Mutex::new(HashMap::new()));
     let mut balances_iter = balances.into_iter();
-    // .skip(2);
     for address in &renewer_addresses {
         balances_iter.next(); // we skip the first result as its value is 2 for low and high
         let balance = from_uint256(
@@ -269,7 +271,7 @@ async fn fetch_users_balances(
         Err(err) => {
             println!("Error while fetching balances: {:?}", err);
             vec![]
-        },
+        }
     }
 }
 
@@ -341,7 +343,10 @@ async fn process_aggregate_result(
                 .map_err(|_| anyhow!("Failed to encode domain name"))
                 .context("Error occurred while encoding domain name")
                 .unwrap();
-            println!("[OK] Domain {}.stark can be renewed by {}", domain_name, renewer_addr);
+            println!(
+                "[OK] Domain {}.stark can be renewed by {}",
+                domain_name, renewer_addr
+            );
             Some(AggregateResult {
                 domain: domain_encoded,
                 renewer_addr,
