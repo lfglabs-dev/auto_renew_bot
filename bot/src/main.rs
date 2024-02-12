@@ -26,6 +26,7 @@ mod models;
 mod sales_tax;
 mod starknet_utils;
 mod utils;
+mod starknetid_utils;
 
 #[derive(Serialize)]
 struct LogData<'a> {
