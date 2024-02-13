@@ -412,7 +412,7 @@ pub async fn renew_domains(
         {
             Ok(tx_hash) => {
                 logger.info(format!(
-                    "Sent a tx 0x{:x} to renew {:x} domains with nonce: {}",
+                    "Sent a tx 0x{:x} to renew {:} domains with nonce: {}",
                     &tx_hash,
                     domains_to_renew.len(),
                     nonce,
