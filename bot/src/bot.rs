@@ -21,6 +21,7 @@ use starknet::{
     signers::LocalWallet,
 };
 use starknet_id::encode;
+use tokio::time::{sleep, Duration as TokioDuration};
 
 use crate::logger::Logger;
 use crate::models::{
@@ -139,7 +140,7 @@ pub async fn get_domains_ready_for_renewal(
     let mut balances: Vec<FieldElement> = vec![];
     let mut renewer_addresses_batch = renewer_addresses.clone();
     while !renewer_addresses_batch.is_empty() {
-        let size = renewer_addresses_batch.len().min(5000);
+        let size = renewer_addresses_batch.len().min(2500);
         let batch = renewer_addresses_batch.drain(0..size).collect();
         let batch_balances = fetch_users_balances(config, batch).await;
         // we skip the first 2 elements, the first one is the index of the call, the 2nd the length of the results
@@ -376,6 +377,7 @@ pub async fn renew_domains(
     mut aggregate_results: AggregateResults,
     logger: &Logger,
 ) -> Result<()> {
+    println!("renewing {} domains", aggregate_results.domains.len());
     // If we have: i32 more than 75 domains to renew we make multiple transactions to avoid hitting the 3M steps limit
     while !aggregate_results.domains.is_empty()
         && !aggregate_results.renewers.is_empty()
@@ -420,6 +422,8 @@ pub async fn renew_domains(
                 return Err(e);
             }
         }
+        println!("Waiting for 1 minute before sending the next transaction...");
+        sleep(TokioDuration::from_secs(60)).await;
     }
     Ok(())
 }
