@@ -22,6 +22,7 @@ use starknet::{
 };
 use starknet_id::encode;
 use tokio::time::{sleep, Duration as TokioDuration};
+use starknet::accounts::ConnectedAccount;
 
 use crate::logger::Logger;
 use crate::models::{
@@ -378,6 +379,7 @@ pub async fn renew_domains(
     logger: &Logger,
 ) -> Result<()> {
     println!("renewing {} domains", aggregate_results.domains.len());
+    let mut nonce = account.get_nonce().await.unwrap();
     // If we have: i32 more than 75 domains to renew we make multiple transactions to avoid hitting the 3M steps limit
     while !aggregate_results.domains.is_empty()
         && !aggregate_results.renewers.is_empty()
@@ -404,14 +406,16 @@ pub async fn renew_domains(
                 tax_prices,
                 meta_hashes,
             },
+            nonce
         )
         .await
         {
             Ok(tx_hash) => {
                 logger.info(format!(
-                    "Sent a tx 0x{:x} to renew {:x} domains",
+                    "Sent a tx 0x{:x} to renew {:x} domains with nonce: {}",
                     &tx_hash,
-                    domains_to_renew.len()
+                    domains_to_renew.len(),
+                    nonce,
                 ));
             }
             Err(e) => {
@@ -424,6 +428,7 @@ pub async fn renew_domains(
         }
         println!("Waiting for 1 minute before sending the next transaction...");
         sleep(TokioDuration::from_secs(60)).await;
+        nonce += FieldElement::ONE;
     }
     Ok(())
 }
@@ -432,6 +437,7 @@ pub async fn send_transaction(
     config: &Config,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     aggregate_results: AggregateResults,
+    nonce: FieldElement,
 ) -> Result<FieldElement> {
     let mut calldata: Vec<FieldElement> = Vec::new();
     calldata
@@ -494,6 +500,7 @@ pub async fn send_transaction(
             calldata,
         }])
         .max_fee(FieldElement::from_dec_str("10360501002400840").unwrap())
+        .nonce(nonce)
         .send()
         .await;
 
