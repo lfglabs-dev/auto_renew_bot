@@ -12,6 +12,7 @@ use chrono::{Duration, Utc};
 use futures::stream::{self, StreamExt};
 use futures::TryStreamExt;
 use mongodb::options::FindOneOptions;
+use starknet::accounts::ConnectedAccount;
 use starknet::core::types::{BlockTag, FunctionCall};
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
@@ -22,7 +23,6 @@ use starknet::{
 };
 use starknet_id::encode;
 use tokio::time::{sleep, Duration as TokioDuration};
-use starknet::accounts::ConnectedAccount;
 
 use crate::logger::Logger;
 use crate::models::{
@@ -378,7 +378,10 @@ pub async fn renew_domains(
     mut aggregate_results: AggregateResults,
     logger: &Logger,
 ) -> Result<()> {
-    println!("renewing {} domains", aggregate_results.domains.len());
+    logger.info(format!(
+        "Renewing {} domains",
+        aggregate_results.domains.len()
+    ));
     let mut nonce = account.get_nonce().await.unwrap();
     // If we have: i32 more than 75 domains to renew we make multiple transactions to avoid hitting the 3M steps limit
     while !aggregate_results.domains.is_empty()
@@ -406,7 +409,7 @@ pub async fn renew_domains(
                 tax_prices,
                 meta_hashes,
             },
-            nonce
+            nonce,
         )
         .await
         {
@@ -417,18 +420,28 @@ pub async fn renew_domains(
                     domains_to_renew.len(),
                     nonce,
                 ));
+                // We only inscrease nonce if no error occurred in the previous transaction
+                nonce += FieldElement::ONE;
             }
             Err(e) => {
-                logger.severe(format!(
-                    "Error while renewing domains: {:?} for domains: {:?}",
-                    e, domains_to_renew
-                ));
-                return Err(e);
+                if e.to_string().contains("Error while estimating fee") {
+                    logger.info(format!(
+                        "Error while estimating fees : {:?} for domains: {:?}",
+                        e, domains_to_renew
+                    ));
+                    logger.info("Continuing with the next transaction...");
+                    continue;
+                } else {
+                    logger.severe(format!(
+                        "Error while renewing domains: {:?} for domains: {:?}",
+                        e, domains_to_renew
+                    ));
+                    return Err(e);
+                }
             }
         }
         println!("Waiting for 1 minute before sending the next transaction...");
         sleep(TokioDuration::from_secs(60)).await;
-        nonce += FieldElement::ONE;
     }
     Ok(())
 }
@@ -493,21 +506,25 @@ pub async fn send_transaction(
     );
     calldata.extend_from_slice(&aggregate_results.meta_hashes);
 
-    let result = account
+    let execution = account
         .execute(vec![Call {
             to: config.contract.renewal,
             selector: selector!("batch_renew"),
-            calldata,
+            calldata: calldata.clone(),
         }])
-        .max_fee(FieldElement::from_dec_str("10360501002400840").unwrap())
-        .nonce(nonce)
-        .send()
-        .await;
+        .fee_estimate_multiplier(1.5f64);
 
-    match result {
-        Ok(tx_result) => Ok(tx_result.transaction_hash),
+    match execution.estimate_fee().await {
+        Ok(fee) => match execution.nonce(nonce).max_fee(fee.overall_fee).send().await {
+            Ok(tx_result) => Ok(tx_result.transaction_hash),
+            Err(e) => {
+                let error_message = format!("An error occurred while renewing domains: {}", e);
+                Err(anyhow::anyhow!(error_message))
+            }
+        },
         Err(e) => {
-            let error_message = format!("An error occurred while renewing domains: {}", e);
+            println!("Error while estimating fee: {:?}", e);
+            let error_message = format!("Error while estimating fee: {}", e);
             Err(anyhow::anyhow!(error_message))
         }
     }
