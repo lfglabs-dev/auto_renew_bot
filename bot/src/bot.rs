@@ -13,7 +13,6 @@ use futures::stream::{self, StreamExt};
 use futures::TryStreamExt;
 use mongodb::options::FindOneOptions;
 use starknet::accounts::ConnectedAccount;
-use starknet::core::types::ExecutionResult;
 use starknet::core::types::{BlockTag, FunctionCall};
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
