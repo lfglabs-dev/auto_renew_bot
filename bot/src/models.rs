@@ -4,7 +4,7 @@ use bigdecimal::BigDecimal;
 use bson::DateTime;
 use mongodb::Database;
 use serde::{Deserialize, Serialize};
-use starknet::core::types::FieldElement;
+use starknet::core::types::{FieldElement, TransactionExecutionStatus};
 
 pub struct AppState {
     pub db: Database,
@@ -88,6 +88,14 @@ pub struct State {
 #[derive(Deserialize, Debug)]
 pub struct States {
     pub states: HashMap<String, State>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TxResult {
+    pub tx_hash: FieldElement,
+    pub reverted: Option<bool>,
+    pub revert_reason: Option<String>,
+    pub domains_renewed: usize,
 }
 
 pub trait Unzip5 {

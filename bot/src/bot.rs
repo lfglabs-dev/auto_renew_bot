@@ -13,6 +13,7 @@ use futures::stream::{self, StreamExt};
 use futures::TryStreamExt;
 use mongodb::options::FindOneOptions;
 use starknet::accounts::ConnectedAccount;
+use starknet::core::types::ExecutionResult;
 use starknet::core::types::{BlockTag, FunctionCall};
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
@@ -25,9 +26,11 @@ use starknet_id::encode;
 use tokio::time::{sleep, Duration as TokioDuration};
 
 use crate::logger::Logger;
+use crate::models::TxResult;
 use crate::models::{
     AggregateResult, AggregateResults, DomainAggregateResult, MetadataDoc, Unzip5,
 };
+use crate::starknet_utils::check_pending_transactions;
 use crate::starknet_utils::create_jsonrpc_client;
 use crate::starknetid_utils::get_renewal_price;
 use crate::utils::{from_uint256, hex_to_bigdecimal, to_uint256};
@@ -383,6 +386,8 @@ pub async fn renew_domains(
         aggregate_results.domains.len()
     ));
     let mut nonce = account.get_nonce().await.unwrap();
+    let mut tx_results = Vec::<TxResult>::new();
+
     // If we have: i32 more than 75 domains to renew we make multiple transactions to avoid hitting the 3M steps limit
     while !aggregate_results.domains.is_empty()
         && !aggregate_results.renewers.is_empty()
@@ -420,6 +425,13 @@ pub async fn renew_domains(
                     domains_to_renew.len(),
                     nonce,
                 ));
+                tx_results.push(TxResult {
+                    tx_hash,
+                    reverted: None,
+                    revert_reason: None,
+                    domains_renewed: domains_to_renew.len(),
+                });
+
                 // We only inscrease nonce if no error occurred in the previous transaction
                 nonce += FieldElement::ONE;
             }
@@ -434,12 +446,42 @@ pub async fn renew_domains(
                 } else {
                     logger.severe(format!(
                         "Error while renewing domains: {:?} for domains: {:?}",
-                        e, domains_to_renew
+                        e,
+                        domains_to_renew.len()
                     ));
                     return Err(e);
                 }
             }
         }
+        
+        check_pending_transactions(config, &mut tx_results).await;
+
+        let filtered_results: Vec<&TxResult> = tx_results
+            .iter()
+            .filter(|tx| tx.reverted.is_some())
+            .collect();
+
+        let failed_count = filtered_results
+            .iter()
+            .rev()
+            .take(3)
+            .filter(|tx| tx.reverted == Some(true))
+            .count();
+
+        // If 3 transactions have failed, we stop the process
+        if failed_count == 3 {
+            logger.severe("The last 3 transactions have failed. Stopping process.");
+            logger.info(format!("Sent {:?} transactions", tx_results.len()));
+            filtered_results.iter().rev().take(3).for_each(|failure| {
+                logger.severe(format!(
+                    "Transaction 0x{:x} has failed with reason: {:?}",
+                    failure.tx_hash, failure.revert_reason
+                ));
+            });
+            logger.severe("Stopping process.");
+            break;
+        }
+
         println!("Waiting for 1 minute before sending the next transaction...");
         sleep(TokioDuration::from_secs(60)).await;
     }
