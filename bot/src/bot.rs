@@ -473,8 +473,8 @@ pub async fn renew_domains(
             logger.info(format!("Sent {:?} transactions", tx_results.len()));
             filtered_results.iter().rev().take(3).for_each(|failure| {
                 logger.severe(format!(
-                    "Transaction 0x{:x} has failed with reason: {:?}",
-                    failure.tx_hash, failure.revert_reason
+                    "Transaction 0x{:x} with {:?} domains has failed with reason: {:?}",
+                    failure.tx_hash, failure.domains_renewed, failure.revert_reason
                 ));
             });
             logger.severe("Stopping process.");
