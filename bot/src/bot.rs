@@ -452,7 +452,7 @@ pub async fn renew_domains(
                 }
             }
         }
-        
+
         check_pending_transactions(config, &mut tx_results).await;
 
         let filtered_results: Vec<&TxResult> = tx_results
@@ -553,7 +553,7 @@ pub async fn send_transaction(
             selector: selector!("batch_renew"),
             calldata: calldata.clone(),
         }])
-        .fee_estimate_multiplier(1.5f64);
+        .fee_estimate_multiplier(5.0f64);
 
     match execution.estimate_fee().await {
         Ok(fee) => match execution.nonce(nonce).max_fee(fee.overall_fee).send().await {
