@@ -7,36 +7,29 @@ use bigdecimal::{
     num_bigint::{BigInt, ToBigInt},
     BigDecimal,
 };
-use bson::{doc, Bson};
-use chrono::{Duration, Utc};
+use bson::doc;
 use futures::stream::{self, StreamExt};
-use futures::TryStreamExt;
 use mongodb::options::FindOneOptions;
 use starknet::accounts::ConnectedAccount;
-use starknet::core::types::{BlockTag, FunctionCall};
 use starknet::{
     accounts::{Account, Call, SingleOwnerAccount},
-    core::types::{BlockId, FieldElement},
+    core::types::FieldElement,
     macros::selector,
-    providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider},
+    providers::{jsonrpc::HttpTransport, JsonRpcClient},
     signers::LocalWallet,
 };
 use starknet_id::encode;
+use std::str::FromStr;
 use tokio::time::{sleep, Duration as TokioDuration};
 
 use crate::logger::Logger;
 use crate::models::TxResult;
-use crate::models::{
-    AggregateResult, AggregateResults, DomainAggregateResult, MetadataDoc, Unzip5,
-};
+use crate::models::{AggregateResult, AggregateResults, DomainAggregateResult, MetadataDoc};
+use crate::pipelines::{get_auto_renewal_altcoins_data, get_auto_renewal_data};
 use crate::starknet_utils::check_pending_transactions;
-use crate::starknet_utils::create_jsonrpc_client;
-use crate::starknetid_utils::get_renewal_price;
+use crate::starknetid_utils::{get_altcoin_quote, get_balances, get_renewal_price_eth};
 use crate::utils::{from_uint256, hex_to_bigdecimal, to_uint256};
-use crate::{
-    config::Config,
-    models::{AppState, Domain},
-};
+use crate::{config::Config, models::AppState};
 
 lazy_static::lazy_static! {
     static ref RENEW_TIME: FieldElement = FieldElement::from_dec_str("365").unwrap();
@@ -46,149 +39,94 @@ pub async fn get_domains_ready_for_renewal(
     config: &Config,
     state: &Arc<AppState>,
     logger: &Logger,
-) -> Result<AggregateResults> {
-    let auto_renews_collection = state.db.collection::<Domain>("auto_renew_flows");
-    let min_expiry_date = Utc::now() + Duration::days(30);
-    println!("timestamp: {}", min_expiry_date.timestamp());
-    // Define aggregate pipeline
-    let pipeline = vec![
-        doc! { "$match": { "_cursor.to": null } },
-        doc! { "$match": { "enabled": true } },
-        doc! { "$lookup": {
-            "from": "domains",
-            "let": { "domain_name": "$domain" },
-            "pipeline": [
-                { "$match":
-                    { "$expr":
-                        { "$and": [
-                            { "$eq": [ "$domain",  "$$domain_name" ] },
-                            { "$eq": [ { "$ifNull": [ "$_cursor.to", null ] }, null ] },
-                        ]}
-                    }
-                },
-            ],
-            "as": "domain_info",
-        }},
-        doc! { "$unwind": "$domain_info" },
-        doc! { "$match": { "domain_info.expiry": { "$lt": Bson::Int64(min_expiry_date.timestamp()) } } },
-        doc! { "$lookup": {
-            "from": "auto_renew_approvals",
-            "let": { "renewer_addr": "$renewer_address" },
-            "pipeline": [
-                { "$match":
-                    { "$expr":
-                        { "$and": [
-                            { "$eq": [ "$renewer",  "$$renewer_addr" ] },
-                            { "$eq": [ { "$ifNull": [ "$_cursor.to", null ] }, null ] },
-                        ]}
-                    }
-                }
-            ],
-            "as": "approval_info",
-        }},
-        doc! { "$unwind": { "path": "$approval_info", "preserveNullAndEmptyArrays": true } },
-        doc! { "$group": {
-            "_id": "$domain_info.domain",
-            "expiry": { "$first": "$domain_info.expiry" },
-            "renewer_address": { "$first": "$renewer_address" },
-            "enabled": { "$first": "$enabled" },
-            "approval_value": { "$first": { "$ifNull": [ "$approval_info.allowance", "0x0" ] } },
-            "allowance": { "$first": "$allowance" },
-            "last_renewal": { "$first": "$last_renewal" },
-            "meta_hash": { "$first": "$meta_hash" },
-            "_cursor": { "$first": "$_cursor" },
-        }},
-        doc! { "$project": {
-            "_id": 0,
-            "domain": "$_id",
-            "expiry": 1,
-            "renewer_address": 1,
-            "enabled": 1,
-            "approval_value": 1,
-            "allowance": 1,
-            "last_renewal": 1,
-            "meta_hash": 1,
-            "_cursor": 1,
-        }},
-    ];
+) -> Result<HashMap<FieldElement, AggregateResults>> {
+    let mut results = get_auto_renewal_data(config, state).await?;
+    let results_altcoins = get_auto_renewal_altcoins_data(config, state).await?;
 
-    // Execute the pipeline
-    let cursor = auto_renews_collection.aggregate(pipeline, None).await?;
-    // Extract the results as Vec<bson::Document>
-    let bson_docs: Vec<bson::Document> = cursor.try_collect().await?;
-    // Convert each bson::Document into DomainAggregateResult
-    let results: Result<Vec<DomainAggregateResult>, _> = bson_docs
-        .into_iter()
-        .map(|doc| bson::from_bson(bson::Bson::Document(doc)))
-        .collect();
-    // Check if the conversion was successful
-    let results = results?;
+    let mut grouped_results: HashMap<FieldElement, AggregateResults> = HashMap::new();
 
-    if results.is_empty() {
-        return Ok(AggregateResults {
-            domains: vec![],
-            renewers: vec![],
-            domain_prices: vec![],
-            tax_prices: vec![],
-            meta_hashes: vec![],
-        });
+    if results.is_empty() && results_altcoins.is_empty() {
+        grouped_results.insert(
+            config.contract.erc20,
+            AggregateResults {
+                domains: vec![],
+                renewers: vec![],
+                domain_prices: vec![],
+                tax_prices: vec![],
+                meta_hashes: vec![],
+                auto_renew_contracts: vec![],
+            },
+        );
+        return Ok(grouped_results);
     }
+
+    // merge all results together
+    results.extend(results_altcoins.iter().cloned());
 
     // Fetch balances for all renewers
-    let renewer_addresses: Vec<String> = results
+    let renewer_and_erc20: Vec<(String, String)> = results
         .iter()
-        .map(|result| result.renewer_address.clone())
+        .map(|result| (result.renewer_address.clone(), result.erc20_addr.clone()))
         .collect();
-    // Batch calls to fetch balances to max 5000 addresses per call
-    let mut balances: Vec<FieldElement> = vec![];
-    let mut renewer_addresses_batch = renewer_addresses.clone();
-    while !renewer_addresses_batch.is_empty() {
-        let size = renewer_addresses_batch.len().min(2500);
-        let batch = renewer_addresses_batch.drain(0..size).collect();
-        let batch_balances = fetch_users_balances(config, batch).await;
-        // we skip the first 2 elements, the first one is the index of the call, the 2nd the length of the results
-        balances.extend(batch_balances.into_iter().skip(2));
-    }
-    println!("balances at the end: {:?}", balances.len());
+
+    let balances = get_balances(config, renewer_and_erc20.clone()).await;
     if balances.is_empty() {
-        logger.severe(format!(
-            "Error while fetching balances for {} users",
-            renewer_addresses.len()
-        ));
+        logger.severe("Error while fetching balances for users".to_string());
         return Err(anyhow!("Error while fetching balances"));
     }
 
-    let dynamic_balances = Arc::new(Mutex::new(HashMap::new()));
+    let dynamic_balances: Arc<Mutex<HashMap<String, HashMap<String, BigInt>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let mut balances_iter = balances.into_iter();
-    for address in &renewer_addresses {
+    for (address, erc20) in &renewer_and_erc20 {
         balances_iter.next(); // we skip the first result as its value is 2 for low and high
         let balance = from_uint256(
             balances_iter.next().expect("Expected low not found"),
             balances_iter.next().expect("Expected high not found"),
         );
-        dynamic_balances
-            .lock()
-            .unwrap()
-            .insert(address.to_owned(), balance);
+        let mut outer_map = dynamic_balances.lock().unwrap();
+        let inner_map = outer_map
+            .entry(address.clone())
+            .or_default();
+        inner_map.insert(erc20.clone(), balance);
     }
 
     // Then process the results
     let results_stream = stream::iter(results.into_iter().enumerate());
     let processed_results = results_stream
         .then(|(i, result)| {
-            let address = renewer_addresses.get(i).unwrap();
-            let balance = dynamic_balances
-                .lock()
-                .unwrap()
-                .get(address)
-                .unwrap()
-                .to_owned();
-            let renewal_price = get_renewal_price(result.domain.clone());
+            let renewer_and_erc20_cloned = renewer_and_erc20.clone();
             let dynamic_balances = Arc::clone(&dynamic_balances);
             async move {
+                let (address, erc20) = renewer_and_erc20_cloned.get(i).unwrap();
+                let balance = dynamic_balances
+                    .lock()
+                    .unwrap()
+                    .get(address)
+                    .and_then(|erc20_balances| erc20_balances.get(erc20))
+                    .cloned()
+                    .expect("Balance not found for this erc20");
+                let renewal_price_eth = get_renewal_price_eth(result.domain.clone());
+                let renewal_price =
+                    if FieldElement::from_hex_be(erc20).unwrap() == config.contract.erc20 {
+                        renewal_price_eth
+                    } else {
+                        match get_altcoin_quote(config, result.erc20_addr.clone()).await {
+                            Ok(quote) => {
+                                (quote * renewal_price_eth)
+                                    / BigInt::from_str("1000000000000000000").unwrap()
+                            }
+                            Err(e) => {
+                                println!("Error while fetching quote: {:?}", e);
+                                // this case can happen if the quote is not in the right range
+                                // we return 0 and won't renew this domain
+                                BigInt::from(0)
+                            }
+                        }
+                    };
                 let output = process_aggregate_result(
                     state,
-                    result,
+                    result.clone(),
                     logger,
                     BigDecimal::from(balance.to_owned()),
                     BigDecimal::from(renewal_price.to_owned()),
@@ -200,6 +138,8 @@ pub async fn get_domains_ready_for_renewal(
                     dynamic_balances
                         .lock()
                         .unwrap()
+                        .entry(result.erc20_addr)
+                        .or_default()
                         .insert(address.to_owned(), new_balance);
                 };
 
@@ -210,73 +150,34 @@ pub async fn get_domains_ready_for_renewal(
         .await;
 
     let mut none_count = 0;
-    let (domains, renewers, domain_prices, tax_prices, meta_hashes): (
-        Vec<FieldElement>,
-        Vec<FieldElement>,
-        Vec<BigDecimal>,
-        Vec<BigDecimal>,
-        Vec<FieldElement>,
-    ) = processed_results
-        .into_iter()
-        .filter_map(|x| match x {
-            Some(res) => Some(res),
-            None => {
-                none_count += 1;
-                None
-            }
-        })
-        .map(|res| {
-            (
-                res.domain,
-                res.renewer_addr,
-                res.domain_price,
-                res.tax_price,
-                res.meta_hash,
-            )
-        })
-        .unzip5();
-    logger.warning(format!("Domains that couldn't be renewed: {}", none_count));
+    for res_option in processed_results.into_iter() {
+        if let Some(res) = res_option {
+            // Fetch or initialize the AggregateResults for this key
+            let entry = grouped_results
+                .entry(res.auto_renew_contract)
+                .or_insert_with(|| AggregateResults {
+                    domains: vec![],
+                    renewers: vec![],
+                    domain_prices: vec![],
+                    tax_prices: vec![],
+                    meta_hashes: vec![],
+                    auto_renew_contracts: vec![],
+                });
 
-    Ok(AggregateResults {
-        domains,
-        renewers,
-        domain_prices,
-        tax_prices,
-        meta_hashes,
-    })
-}
-
-async fn fetch_users_balances(
-    config: &Config,
-    renewer_addresses: Vec<String>,
-) -> Vec<FieldElement> {
-    let mut calls: Vec<FieldElement> = vec![FieldElement::from(renewer_addresses.len())];
-    for address in &renewer_addresses {
-        calls.push(config.contract.erc20);
-        calls.push(selector!("balanceOf"));
-        calls.push(FieldElement::ONE);
-        calls.push(FieldElement::from_hex_be(address).unwrap());
-    }
-
-    let provider = create_jsonrpc_client(&config);
-    let call_result = provider
-        .call(
-            FunctionCall {
-                contract_address: config.contract.multicall,
-                entry_point_selector: selector!("aggregate"),
-                calldata: calls,
-            },
-            BlockId::Tag(BlockTag::Latest),
-        )
-        .await;
-
-    match call_result {
-        Ok(result) => result,
-        Err(err) => {
-            println!("Error while fetching balances: {:?}", err);
-            vec![]
+            // Append the current result to the vectors in AggregateResults
+            entry.domains.push(res.domain);
+            entry.renewers.push(res.renewer_addr);
+            entry.domain_prices.push(res.domain_price);
+            entry.tax_prices.push(res.tax_price);
+            entry.meta_hashes.push(res.meta_hash);
+        } else {
+            // Increment none_count if the result is None
+            none_count += 1;
         }
     }
+    logger.warning(format!("Domains that couldn't be renewed: {}", none_count));
+
+    Ok(grouped_results)
 }
 
 async fn process_aggregate_result(
@@ -298,6 +199,11 @@ async fn process_aggregate_result(
         BigDecimal::from(0)
     };
     let allowance = hex_to_bigdecimal(&result.allowance.unwrap()).unwrap();
+
+    // if renewal_price is 0, we don't renew the domain
+    if renewal_price == BigDecimal::from(0) {
+        return None;
+    }
 
     // Check user meta hash
     let mut tax_price = BigDecimal::from(0);
@@ -324,16 +230,16 @@ async fn process_aggregate_result(
     }
     let final_price = renewal_price.clone() + tax_price.clone();
 
-    // Check user ETH allowance is greater or equal than final price = renew_price + tax_price
+    // Check user ERC20 allowance is greater or equal than final price = renew_price + tax_price
     if erc20_allowance >= final_price {
         // check user allowance is greater or equal than final price
         if allowance >= final_price {
             // check user balance is sufficiant
             if balance < final_price {
-                // logger.warning(format!(
+                // println!(
                 //     "Domain {} cannot be renewed because {} has not enough balance ({}) for domain price({})",
                 //     result.domain, result.renewer_address, balance, final_price
-                // ));
+                // );
                 return None;
             }
 
@@ -357,19 +263,20 @@ async fn process_aggregate_result(
                 domain_price: renewal_price,
                 tax_price,
                 meta_hash,
+                auto_renew_contract: result.auto_renew_contract,
             })
         } else {
-            // logger.warning(format!(
+            // println!(
             //     "Domain {} cannot be renewed because {} has set an allowance({}) lower than final price({})",
             //     result.domain, result.renewer_address, allowance, final_price
-            // ));
+            // );
             None
         }
     } else {
-        // logger.warning(format!(
+        // println!(
         //     "Domain {} cannot be renewed because {} has set an erc20_allowance ({}) lower than domain price({}) + tax({})",
         //     result.domain, result.renewer_address, erc20_allowance, renewal_price, tax_price
-        // ));
+        // );
         None
     }
 }
@@ -378,11 +285,13 @@ pub async fn renew_domains(
     config: &Config,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     mut aggregate_results: AggregateResults,
+    auto_renew_contract: &FieldElement,
     logger: &Logger,
 ) -> Result<()> {
     logger.info(format!(
-        "Renewing {} domains",
-        aggregate_results.domains.len()
+        "Renewing {} domains on autorenewal contract {}",
+        aggregate_results.domains.len(),
+        auto_renew_contract
     ));
     let mut nonce = account.get_nonce().await.unwrap();
     let mut tx_results = Vec::<TxResult>::new();
@@ -404,14 +313,15 @@ pub async fn renew_domains(
         let meta_hashes: Vec<FieldElement> = aggregate_results.meta_hashes.drain(0..size).collect();
 
         match send_transaction(
-            config,
             account,
+            auto_renew_contract.to_owned(),
             AggregateResults {
                 domains: domains_to_renew.clone(),
                 renewers,
                 domain_prices,
                 tax_prices,
                 meta_hashes,
+                auto_renew_contracts: vec![],
             },
             nonce,
         )
@@ -488,8 +398,8 @@ pub async fn renew_domains(
 }
 
 pub async fn send_transaction(
-    config: &Config,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
+    auto_renew_contract: FieldElement,
     aggregate_results: AggregateResults,
     nonce: FieldElement,
 ) -> Result<FieldElement> {
@@ -549,7 +459,7 @@ pub async fn send_transaction(
 
     let execution = account
         .execute(vec![Call {
-            to: config.contract.renewal,
+            to: auto_renew_contract,
             selector: selector!("batch_renew"),
             calldata: calldata.clone(),
         }])
