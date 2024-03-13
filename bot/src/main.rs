@@ -11,7 +11,6 @@ use starknet::{
     providers::Provider,
     signers::{LocalWallet, SigningKey},
 };
-use starknet_id::decode;
 use starknet_utils::create_jsonrpc_client;
 use tokio::time::sleep;
 
@@ -23,6 +22,7 @@ mod bot;
 mod config;
 mod logger;
 mod models;
+mod pipelines;
 mod sales_tax;
 mod starknet_utils;
 mod starknetid_utils;
@@ -161,30 +161,31 @@ async fn main() {
             println!("[bot] Checking domains to renew");
             match bot::get_domains_ready_for_renewal(&conf, &shared_state, &logger).await {
                 Ok(aggregate_results) => {
-                    //println!("[bot] checking domains to renew today");
-                    if !aggregate_results.domains.is_empty() {
-                        match renew_domains(&conf, &account, aggregate_results.clone(), &logger)
+                    if !aggregate_results.is_empty() {
+                        for (auto_renew_contract, result) in &aggregate_results {
+                            match renew_domains(
+                                &conf,
+                                &account,
+                                result.clone(),
+                                auto_renew_contract,
+                                &logger,
+                            )
                             .await
-                        {
-                            Ok(_) => {
-                                aggregate_results
-                                    .domains
-                                    .iter()
-                                    .zip(aggregate_results.renewers.iter())
-                                    .for_each(|(d, r)| {
-                                        logger.info(format!(
-                                            "- `Renewal: {}` by `{:#x}`",
-                                            &decode(*d),
-                                            r
-                                        ))
-                                    });
-                            }
-                            Err(e) => {
-                                logger.severe(format!("Unable to renew domains: {}", e));
-                                if e.to_string().contains("request rate limited") {
-                                    continue;
-                                } else {
-                                    break;
+                            {
+                                Ok(_) => {
+                                    logger.info(format!(
+                                        "`Renewed {} domains on auto renewal contract address {}",
+                                        result.domains.len(),
+                                        auto_renew_contract
+                                    ));
+                                }
+                                Err(e) => {
+                                    logger.severe(format!("Unable to renew domains: {}", e));
+                                    if e.to_string().contains("request rate limited") {
+                                        continue;
+                                    } else {
+                                        break;
+                                    }
                                 }
                             }
                         }

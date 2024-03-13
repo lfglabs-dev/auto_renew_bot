@@ -1,6 +1,7 @@
 use bigdecimal::{num_bigint::BigInt, BigDecimal};
 use num_integer::Integer;
 use starknet::core::types::FieldElement;
+use std::fmt::Write;
 
 lazy_static::lazy_static! {
     static ref TWO_POW_128: BigInt = BigInt::from(2).pow(128);
@@ -33,4 +34,14 @@ pub fn from_uint256(low: FieldElement, high: FieldElement) -> BigInt {
     );
 
     &high_bigint.checked_mul(&TWO_POW_128).unwrap() + low_bigint
+}
+
+pub fn to_hex(felt: FieldElement) -> String {
+    let bytes = felt.to_bytes_be();
+    let mut result = String::with_capacity(bytes.len() * 2 + 2);
+    result.push_str("0x");
+    for byte in bytes {
+        write!(&mut result, "{:02x}", byte).unwrap();
+    }
+    result
 }

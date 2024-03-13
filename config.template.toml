@@ -34,3 +34,6 @@ severe = "goerli/severe"
 
 [rpc]
 rpc_url = "https://starknet-goerli.g.alchemy.com/v2/xxxxxxx"
+
+[server]
+starknetid_api = "https://api.starknet.id"

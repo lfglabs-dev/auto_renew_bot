@@ -60,6 +60,10 @@ pub_struct!(Clone, Deserialize; WatchtowerTypes {
     severe: String,
 });
 
+pub_struct!(Clone, Deserialize; Server {
+    starknetid_api: String,
+});
+
 pub_struct!(Clone, Deserialize; Config {
     contract: Contract,
     database: Database,
@@ -68,6 +72,7 @@ pub_struct!(Clone, Deserialize; Config {
     indexer_server: IndexerServer,
     rpc: Rpc,
     watchtower: Watchtower,
+    server: Server,
 });
 
 pub fn load() -> Config {

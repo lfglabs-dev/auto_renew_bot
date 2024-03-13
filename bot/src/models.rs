@@ -4,7 +4,7 @@ use bigdecimal::BigDecimal;
 use bson::DateTime;
 use mongodb::Database;
 use serde::{Deserialize, Serialize};
-use starknet::core::types::{FieldElement, TransactionExecutionStatus};
+use starknet::core::types::FieldElement;
 
 pub struct AppState {
     pub db: Database,
@@ -19,6 +19,7 @@ pub struct Domain {
     pub token_id: Option<String>,
     pub creation_date: Option<DateTime>,
     pub rev_addr: Option<String>,
+    pub auto_renew_contract: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -51,6 +52,8 @@ pub struct DomainAggregateResult {
     pub last_renewal: Option<i64>,
     pub meta_hash: Option<String>,
     pub _cursor: Cursor,
+    pub erc20_addr: String,
+    pub auto_renew_contract: FieldElement,
 }
 
 pub struct AggregateResult {
@@ -59,6 +62,7 @@ pub struct AggregateResult {
     pub domain_price: BigDecimal,
     pub tax_price: BigDecimal,
     pub meta_hash: FieldElement,
+    pub auto_renew_contract: FieldElement,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -68,6 +72,7 @@ pub struct AggregateResults {
     pub domain_prices: Vec<BigDecimal>,
     pub tax_prices: Vec<BigDecimal>,
     pub meta_hashes: Vec<FieldElement>,
+    pub auto_renew_contracts: Vec<FieldElement>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -96,59 +101,4 @@ pub struct TxResult {
     pub reverted: Option<bool>,
     pub revert_reason: Option<String>,
     pub domains_renewed: usize,
-}
-
-pub trait Unzip5 {
-    type A;
-    type B;
-    type C;
-    type D;
-    type E;
-
-    fn unzip5(
-        self,
-    ) -> (
-        Vec<Self::A>,
-        Vec<Self::B>,
-        Vec<Self::C>,
-        Vec<Self::D>,
-        Vec<Self::E>,
-    );
-}
-
-impl<T, A, B, C, D, E> Unzip5 for T
-where
-    T: Iterator<Item = (A, B, C, D, E)>,
-{
-    type A = A;
-    type B = B;
-    type C = C;
-    type D = D;
-    type E = E;
-
-    fn unzip5(
-        self,
-    ) -> (
-        Vec<Self::A>,
-        Vec<Self::B>,
-        Vec<Self::C>,
-        Vec<Self::D>,
-        Vec<Self::E>,
-    ) {
-        let mut a = Vec::new();
-        let mut b = Vec::new();
-        let mut c = Vec::new();
-        let mut d = Vec::new();
-        let mut e = Vec::new();
-
-        for (x, y, z, w, v) in self {
-            a.push(x);
-            b.push(y);
-            c.push(z);
-            d.push(w);
-            e.push(v);
-        }
-
-        (a, b, c, d, e)
-    }
 }
