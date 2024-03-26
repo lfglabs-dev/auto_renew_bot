@@ -16,7 +16,7 @@ pub async fn get_auto_renewal_data(
     state: &Arc<AppState>,
 ) -> Result<Vec<DomainAggregateResult>> {
     let auto_renews_collection = state.db.collection::<Domain>("auto_renew_flows");
-    let min_expiry_date = Utc::now() + Duration::days(400);
+    let min_expiry_date = Utc::now() + Duration::days(config.renewals.expiry_days);
     let erc20_addr = to_hex(config.contract.erc20);
     let auto_renew_contract = FieldElement::to_string(&config.contract.renewal);
     println!("timestamp: {}", min_expiry_date.timestamp());

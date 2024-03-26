@@ -18,6 +18,7 @@ address = "0x123"
 
 [renewals]
 delay = 86400 # 24 hours
+expiry_days = 30 # number of days before expiry to renew
 
 [indexer_server]
 port = [8005, 8007, 8008]
