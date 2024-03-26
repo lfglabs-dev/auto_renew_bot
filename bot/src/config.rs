@@ -35,6 +35,7 @@ pub_struct!(Clone, Deserialize; MyAccount {
 
 pub_struct!(Clone, Deserialize; Renewals {
     delay: u64,
+    expiry_days: i64,
 });
 
 pub_struct!(Clone, Deserialize; IndexerServer {

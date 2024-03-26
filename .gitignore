@@ -69,3 +69,4 @@ Cargo.lock
 *.pdb
 
 config.testnet.toml
+config/
