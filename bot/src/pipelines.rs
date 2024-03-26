@@ -110,7 +110,7 @@ pub async fn get_auto_renewal_altcoins_data(
     state: &Arc<AppState>,
 ) -> Result<Vec<DomainAggregateResult>> {
     let auto_renews_collection = state.db.collection::<Domain>("auto_renew_flows_altcoins");
-    let min_expiry_date = Utc::now() + Duration::days(400); // todo : change to 30 days
+    let min_expiry_date = Utc::now() + Duration::days(config.renewals.expiry_days);
 
     // Define aggregate pipeline
     let pipeline = vec![
