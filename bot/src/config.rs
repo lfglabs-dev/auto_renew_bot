@@ -84,7 +84,7 @@ pub_struct!(Clone; Config {
     rpc: Rpc,
     watchtower: Watchtower,
     server: Server,
-    altcoins_mapping: HashMap<FieldElement, FieldElement>,
+    renewers_mapping: HashMap<FieldElement, FieldElement>,
 });
 
 impl<'de> Deserialize<'de> for Config {
@@ -102,7 +102,7 @@ impl<'de> Deserialize<'de> for Config {
             rpc: Rpc,
             watchtower: Watchtower,
             server: Server,
-            altcoins: HashMap<String, Altcoin>,
+            renewers: HashMap<String, Altcoin>,
         }
 
         let OuterConfig {
@@ -114,11 +114,11 @@ impl<'de> Deserialize<'de> for Config {
             rpc,
             watchtower,
             server,
-            altcoins,
+            renewers,
         } = OuterConfig::deserialize(deserializer)?;
 
         // Build atcoins mapping
-        let altcoins_mapping = altcoins
+        let renewers_mapping = renewers
             .into_values()
             .map(|val| (val.renewal_contract, val.address))
             .collect();
@@ -132,7 +132,7 @@ impl<'de> Deserialize<'de> for Config {
             rpc,
             watchtower,
             server,
-            altcoins_mapping,
+            renewers_mapping,
         })
     }
 }
