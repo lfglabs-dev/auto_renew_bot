@@ -1,6 +1,11 @@
+use serde::de::MapAccess;
+use serde::de::Visitor;
 use serde::Deserialize;
+use serde::Deserializer;
 use starknet::core::types::FieldElement;
+use std::collections::HashMap;
 use std::env;
+use std::fmt;
 use std::fs;
 
 macro_rules! pub_struct {
@@ -65,16 +70,72 @@ pub_struct!(Clone, Deserialize; Server {
     starknetid_api: String,
 });
 
-pub_struct!(Clone, Deserialize; Config {
+pub_struct!(Clone, Deserialize; Altcoin {
+    address: FieldElement,
+    renewal_contract: FieldElement,
+});
+
+pub_struct!(Clone; Config {
     contract: Contract,
     database: Database,
     account: MyAccount,
-    renewals : Renewals,
+    renewals: Renewals,
     indexer_server: IndexerServer,
     rpc: Rpc,
     watchtower: Watchtower,
     server: Server,
+    altcoins_mapping: HashMap<FieldElement, FieldElement>,
 });
+
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct OuterConfig {
+            contract: Contract,
+            database: Database,
+            account: MyAccount,
+            renewals: Renewals,
+            indexer_server: IndexerServer,
+            rpc: Rpc,
+            watchtower: Watchtower,
+            server: Server,
+            altcoins: HashMap<String, Altcoin>,
+        }
+
+        let OuterConfig {
+            contract,
+            database,
+            account,
+            renewals,
+            indexer_server,
+            rpc,
+            watchtower,
+            server,
+            altcoins,
+        } = OuterConfig::deserialize(deserializer)?;
+
+        // Build atcoins mapping
+        let altcoins_mapping = altcoins
+            .into_values()
+            .map(|val| (val.renewal_contract, val.address))
+            .collect();
+
+        Ok(Config {
+            contract,
+            database,
+            account,
+            renewals,
+            indexer_server,
+            rpc,
+            watchtower,
+            server,
+            altcoins_mapping,
+        })
+    }
+}
 
 pub fn load() -> Config {
     let args: Vec<String> = env::args().collect();

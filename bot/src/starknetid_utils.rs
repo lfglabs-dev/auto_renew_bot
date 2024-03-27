@@ -49,9 +49,7 @@ pub async fn get_altcoin_quote(config: &Config, erc20: String) -> Result<BigInt>
     match client.get(&url).send().await {
         Ok(response) => match response.text().await {
             Ok(text) => match serde_json::from_str::<QuoteQueryResult>(&text) {
-                Ok(results) => {
-                    Ok(BigInt::from_str(&results.quote).unwrap())
-                }
+                Ok(results) => Ok(BigInt::from_str(&results.quote).unwrap()),
                 Err(err) => Err(anyhow!("Error parsing response: {:?}", err)),
             },
             Err(err) => Err(anyhow!("Error fetching response: {:?}", err)),

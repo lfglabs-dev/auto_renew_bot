@@ -58,7 +58,6 @@ pub async fn get_auto_renewal_data(
         }},
         doc! { "$unwind": { "path": "$approval_info", "preserveNullAndEmptyArrays": true } },
         doc! { "$addFields": {
-            "erc20_addr": erc20_addr,
             "auto_renew_contract": auto_renew_contract,
         }},
         doc! { "$group": {
@@ -66,13 +65,17 @@ pub async fn get_auto_renewal_data(
             "expiry": { "$first": "$domain_info.expiry" },
             "renewer_address": { "$first": "$renewer_address" },
             "enabled": { "$first": "$enabled" },
-            "approval_value": { "$first": { "$ifNull": [ "$approval_info.allowance", "0x0" ] } },
             "allowance": { "$first": "$allowance" },
             "last_renewal": { "$first": "$last_renewal" },
             "meta_hash": { "$first": "$meta_hash" },
             "_cursor": { "$first": "$_cursor" },
-            "erc20_addr": { "$first": "$erc20_addr" },
             "auto_renew_contract": { "$first": "$auto_renew_contract" },
+            "approval_values": {
+                "$push": {
+                    "approval_value": "$approval_info.allowance",
+                    "erc20_addr": erc20_addr
+                }
+            },
         }},
         doc! { "$project": {
             "_id": 0,
@@ -80,13 +83,12 @@ pub async fn get_auto_renewal_data(
             "expiry": 1,
             "renewer_address": 1,
             "enabled": 1,
-            "approval_value": 1,
             "allowance": 1,
             "last_renewal": 1,
             "meta_hash": 1,
             "_cursor": 1,
-            "erc20_addr": 1,
             "auto_renew_contract": 1,
+            "approval_values": 1,
         }},
     ];
 
@@ -154,13 +156,17 @@ pub async fn get_auto_renewal_altcoins_data(
             "expiry": { "$first": "$domain_info.expiry" },
             "renewer_address": { "$first": "$renewer_address" },
             "enabled": { "$first": "$enabled" },
-            "approval_value": { "$first": { "$ifNull": [ "$approval_info.allowance", "0x0" ] } },
             "allowance": { "$first": "$allowance" },
             "last_renewal": { "$first": "$last_renewal" },
             "meta_hash": { "$first": "$meta_hash" },
             "_cursor": { "$first": "$_cursor" },
-            "erc20_addr": { "$first": "$approval_info.erc20_addr" },
             "auto_renew_contract": { "$first": "$auto_renew_contract" },
+            "approval_values": {
+                "$push": {
+                    "approval_value": "$approval_info.allowance",
+                    "erc20_addr": "$approval_info.erc20_addr"
+                }
+            },
         }},
         doc! { "$project": {
             "_id": 0,
@@ -168,13 +174,12 @@ pub async fn get_auto_renewal_altcoins_data(
             "expiry": 1,
             "renewer_address": 1,
             "enabled": 1,
-            "approval_value": 1,
             "allowance": 1,
             "last_renewal": 1,
             "meta_hash": 1,
             "_cursor": 1,
-            "erc20_addr": 1,
             "auto_renew_contract": 1,
+            "approval_values": 1,
         }},
     ];
 
@@ -189,6 +194,8 @@ pub async fn get_auto_renewal_altcoins_data(
         .collect();
     // Check if the conversion was successful
     let results = results?;
+
+    println!("results: {:?}", results);
 
     Ok(results)
 }
