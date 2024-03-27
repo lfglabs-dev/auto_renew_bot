@@ -73,7 +73,7 @@ pub async fn get_domains_ready_for_renewal(
                 // get the erc20 address for the given auto_renew_contract
                 to_hex(
                     *config
-                        .altcoins_mapping
+                        .renewers_mapping
                         .get(&result.auto_renew_contract)
                         .unwrap(),
                 ),
