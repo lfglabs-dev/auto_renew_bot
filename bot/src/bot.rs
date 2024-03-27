@@ -28,6 +28,7 @@ use crate::models::{AggregateResult, AggregateResults, DomainAggregateResult, Me
 use crate::pipelines::{get_auto_renewal_altcoins_data, get_auto_renewal_data};
 use crate::starknet_utils::check_pending_transactions;
 use crate::starknetid_utils::{get_altcoin_quote, get_balances, get_renewal_price_eth};
+use crate::utils::to_hex;
 use crate::utils::{from_uint256, hex_to_bigdecimal, to_uint256};
 use crate::{config::Config, models::AppState};
 
@@ -66,7 +67,18 @@ pub async fn get_domains_ready_for_renewal(
     // Fetch balances for all renewers
     let renewer_and_erc20: Vec<(String, String)> = results
         .iter()
-        .map(|result| (result.renewer_address.clone(), result.erc20_addr.clone()))
+        .map(|result| {
+            (
+                result.renewer_address.clone(),
+                // get the erc20 address for the given auto_renew_contract
+                to_hex(
+                    *config
+                        .altcoins_mapping
+                        .get(&result.auto_renew_contract)
+                        .unwrap(),
+                ),
+            )
+        })
         .collect();
 
     let balances = get_balances(config, renewer_and_erc20.clone()).await;
@@ -85,9 +97,7 @@ pub async fn get_domains_ready_for_renewal(
             balances_iter.next().expect("Expected high not found"),
         );
         let mut outer_map = dynamic_balances.lock().unwrap();
-        let inner_map = outer_map
-            .entry(address.clone())
-            .or_default();
+        let inner_map = outer_map.entry(address.clone()).or_default();
         inner_map.insert(erc20.clone(), balance);
     }
 
@@ -111,16 +121,18 @@ pub async fn get_domains_ready_for_renewal(
                     if FieldElement::from_hex_be(erc20).unwrap() == config.contract.erc20 {
                         renewal_price_eth
                     } else {
-                        match get_altcoin_quote(config, result.erc20_addr.clone()).await {
+                        match get_altcoin_quote(config, erc20.to_string()).await {
                             Ok(quote) => {
                                 (quote * renewal_price_eth)
                                     / BigInt::from_str("1000000000000000000").unwrap()
                             }
                             Err(e) => {
-                                println!("Error while fetching quote: {:?}", e);
-                                // this case can happen if the quote is not in the right range
-                                // we return 0 and won't renew this domain
-                                BigInt::from(0)
+                                // in case get_altcoin_quote endpoint returns an error we panic with the error
+                                logger.severe(format!(
+                                    "Error while fetching quote on starknetid server: {:?}",
+                                    e
+                                ));
+                                panic!("Error while fetching quote on starknetid server: {:?}", e)
                             }
                         }
                     };
@@ -130,6 +142,7 @@ pub async fn get_domains_ready_for_renewal(
                     logger,
                     BigDecimal::from(balance.to_owned()),
                     BigDecimal::from(renewal_price.to_owned()),
+                    erc20.clone(),
                 )
                 .await;
 
@@ -138,7 +151,7 @@ pub async fn get_domains_ready_for_renewal(
                     dynamic_balances
                         .lock()
                         .unwrap()
-                        .entry(result.erc20_addr)
+                        .entry(erc20.to_string())
                         .or_default()
                         .insert(address.to_owned(), new_balance);
                 };
@@ -186,6 +199,7 @@ async fn process_aggregate_result(
     _logger: &Logger,
     balance: BigDecimal,
     renewal_price: BigDecimal,
+    erc20_addr: String,
 ) -> Option<AggregateResult> {
     // Skip the rest if auto-renewal is not enabled
     if !result.enabled || result.allowance.is_none() {
@@ -193,17 +207,18 @@ async fn process_aggregate_result(
     }
 
     let renewer_addr = FieldElement::from_hex_be(&result.renewer_address).unwrap();
-    let erc20_allowance = if let Some(approval_value) = result.approval_value {
+    // map the vec of approval_values to get tha approval_value for the erc20_addr selected
+    let erc20_allowance = if let Some(approval_value) = result
+        .approval_values
+        .iter()
+        .find(|&data| data.erc20_addr == erc20_addr)
+        .map(|data| data.approval_value.clone())
+    {
         hex_to_bigdecimal(&approval_value).unwrap()
     } else {
         BigDecimal::from(0)
     };
     let allowance = hex_to_bigdecimal(&result.allowance.unwrap()).unwrap();
-
-    // if renewal_price is 0, we don't renew the domain
-    if renewal_price == BigDecimal::from(0) {
-        return None;
-    }
 
     // Check user meta hash
     let mut tax_price = BigDecimal::from(0);
@@ -466,7 +481,13 @@ pub async fn send_transaction(
         .fee_estimate_multiplier(5.0f64);
 
     match execution.estimate_fee().await {
-        Ok(fee) => match execution.nonce(nonce).max_fee(fee.overall_fee).send().await {
+        Ok(_) => match execution
+            .nonce(nonce)
+            // harcode max fee to 10$ = 0.0028 ETH
+            .max_fee(FieldElement::from(2800000000000000_u64))
+            .send()
+            .await
+        {
             Ok(tx_result) => Ok(tx_result.transaction_hash),
             Err(e) => {
                 let error_message = format!("An error occurred while renewing domains: {}", e);

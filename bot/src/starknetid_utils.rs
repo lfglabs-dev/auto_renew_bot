@@ -13,8 +13,8 @@ use crate::{config::Config, starknet_utils::create_jsonrpc_client};
 lazy_static::lazy_static! {
     static ref PRICE_DOMAIN_LEN_1: BigInt = BigInt::from_u128(1068493150684932 * 365).unwrap();
     static ref PRICE_DOMAIN_LEN_2: BigInt = BigInt::from_u128(657534246575343 * 365).unwrap();
-    static ref PRICE_DOMAIN_LEN_3: BigInt = BigInt::from_u128(410958904109590 * 365).unwrap();
-    static ref PRICE_DOMAIN_LEN_4: BigInt = BigInt::from_u128(232876712328767 * 365).unwrap();
+    static ref PRICE_DOMAIN_LEN_3: BigInt = BigInt::from_u128(200000000000000 * 365).unwrap();
+    static ref PRICE_DOMAIN_LEN_4: BigInt = BigInt::from_u128(73972602739726 * 365).unwrap();
     static ref PRICE_DOMAIN: BigInt = BigInt::from_u128(24657534246575 * 365).unwrap();
 }
 
@@ -49,9 +49,7 @@ pub async fn get_altcoin_quote(config: &Config, erc20: String) -> Result<BigInt>
     match client.get(&url).send().await {
         Ok(response) => match response.text().await {
             Ok(text) => match serde_json::from_str::<QuoteQueryResult>(&text) {
-                Ok(results) => {
-                    Ok(BigInt::from_str(&results.quote).unwrap())
-                }
+                Ok(results) => Ok(BigInt::from_str(&results.quote).unwrap()),
                 Err(err) => Err(anyhow!("Error parsing response: {:?}", err)),
             },
             Err(err) => Err(anyhow!("Error fetching response: {:?}", err)),
