@@ -41,21 +41,6 @@ pub struct Cursor {
     pub from: Option<i64>,
 }
 
-// #[derive(Clone, Debug, Deserialize, Serialize)]
-// pub struct DomainAggregateResult {
-//     pub domain: String,
-//     pub expiry: Option<i32>,
-//     pub renewer_address: String,
-//     pub enabled: bool,
-//     pub approval_value: Option<String>,
-//     pub allowance: Option<String>,
-//     pub last_renewal: Option<i64>,
-//     pub meta_hash: Option<String>,
-//     pub _cursor: Cursor,
-//     pub erc20_addr: String,
-//     pub auto_renew_contract: FieldElement,
-// }
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AutoRenewAllowance {
     pub approval_value: String,
