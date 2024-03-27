@@ -481,7 +481,13 @@ pub async fn send_transaction(
         .fee_estimate_multiplier(5.0f64);
 
     match execution.estimate_fee().await {
-        Ok(fee) => match execution.nonce(nonce).max_fee(fee.overall_fee).send().await {
+        Ok(_) => match execution
+            .nonce(nonce)
+            // harcode max fee to 10$ = 0.0028 ETH
+            .max_fee(FieldElement::from(2800000000000000_u64))
+            .send()
+            .await
+        {
             Ok(tx_result) => Ok(tx_result.transaction_hash),
             Err(e) => {
                 let error_message = format!("An error occurred while renewing domains: {}", e);
