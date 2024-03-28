@@ -70,7 +70,7 @@ pub_struct!(Clone, Deserialize; Server {
     starknetid_api: String,
 });
 
-pub_struct!(Clone, Deserialize; Altcoin {
+pub_struct!(Clone, Deserialize; Renewer {
     address: FieldElement,
     renewal_contract: FieldElement,
 });
@@ -102,7 +102,7 @@ impl<'de> Deserialize<'de> for Config {
             rpc: Rpc,
             watchtower: Watchtower,
             server: Server,
-            renewers: HashMap<String, Altcoin>,
+            renewers: HashMap<String, Renewer>,
         }
 
         let OuterConfig {

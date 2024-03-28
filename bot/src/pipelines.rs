@@ -72,7 +72,7 @@ pub async fn get_auto_renewal_data(
             "auto_renew_contract": { "$first": "$auto_renew_contract" },
             "approval_values": {
                 "$push": {
-                    "approval_value": "$approval_info.allowance",
+                    "approval_value": { "$ifNull": [ "$approval_info.allowance", "0x0" ] },
                     "erc20_addr": erc20_addr
                 }
             },
@@ -163,8 +163,8 @@ pub async fn get_auto_renewal_altcoins_data(
             "auto_renew_contract": { "$first": "$auto_renew_contract" },
             "approval_values": {
                 "$push": {
-                    "approval_value": "$approval_info.allowance",
-                    "erc20_addr": "$approval_info.erc20_addr"
+                    "approval_value": { "$ifNull": [ "$approval_info.allowance", "0x0" ] },
+                    "erc20_addr": { "$ifNull": [ "$approval_info.erc20_addr", "0x0" ] },
                 }
             },
         }},
@@ -194,8 +194,6 @@ pub async fn get_auto_renewal_altcoins_data(
         .collect();
     // Check if the conversion was successful
     let results = results?;
-
-    println!("results: {:?}", results);
 
     Ok(results)
 }

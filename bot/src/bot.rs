@@ -68,6 +68,10 @@ pub async fn get_domains_ready_for_renewal(
     let renewer_and_erc20: Vec<(String, String)> = results
         .iter()
         .map(|result| {
+            let test = config
+            .renewers_mapping
+            .get(&result.auto_renew_contract)
+            .unwrap();
             (
                 result.renewer_address.clone(),
                 // get the erc20 address for the given auto_renew_contract
@@ -207,7 +211,7 @@ async fn process_aggregate_result(
     }
 
     let renewer_addr = FieldElement::from_hex_be(&result.renewer_address).unwrap();
-    // map the vec of approval_values to get tha approval_value for the erc20_addr selected
+    // map the vec of approval_values to get the approval_value for the erc20_addr selected
     let erc20_allowance = if let Some(approval_value) = result
         .approval_values
         .iter()
@@ -270,7 +274,7 @@ async fn process_aggregate_result(
                 .unwrap();
             println!(
                 "[OK] Domain {}.stark can be renewed by {}",
-                domain_name, renewer_addr
+                domain_name, to_hex(renewer_addr)
             );
             Some(AggregateResult {
                 domain: domain_encoded,
