@@ -68,6 +68,10 @@ pub async fn get_domains_ready_for_renewal(
     let renewer_and_erc20: Vec<(String, String)> = results
         .iter()
         .map(|result| {
+            let test = config
+            .renewers_mapping
+            .get(&result.auto_renew_contract)
+            .unwrap();
             (
                 result.renewer_address.clone(),
                 // get the erc20 address for the given auto_renew_contract
@@ -207,7 +211,7 @@ async fn process_aggregate_result(
     }
 
     let renewer_addr = FieldElement::from_hex_be(&result.renewer_address).unwrap();
-    // map the vec of approval_values to get tha approval_value for the erc20_addr selected
+    // map the vec of approval_values to get the approval_value for the erc20_addr selected
     let erc20_allowance = if let Some(approval_value) = result
         .approval_values
         .iter()
@@ -270,7 +274,7 @@ async fn process_aggregate_result(
                 .unwrap();
             println!(
                 "[OK] Domain {}.stark can be renewed by {}",
-                domain_name, renewer_addr
+                domain_name, to_hex(renewer_addr)
             );
             Some(AggregateResult {
                 domain: domain_encoded,
@@ -472,32 +476,33 @@ pub async fn send_transaction(
     );
     calldata.extend_from_slice(&aggregate_results.meta_hashes);
 
-    let execution = account
-        .execute(vec![Call {
-            to: auto_renew_contract,
-            selector: selector!("batch_renew"),
-            calldata: calldata.clone(),
-        }])
-        .fee_estimate_multiplier(5.0f64);
+    Ok(FieldElement::ONE)
+    // let execution = account
+    //     .execute(vec![Call {
+    //         to: auto_renew_contract,
+    //         selector: selector!("batch_renew"),
+    //         calldata: calldata.clone(),
+    //     }])
+    //     .fee_estimate_multiplier(5.0f64);
 
-    match execution.estimate_fee().await {
-        Ok(_) => match execution
-            .nonce(nonce)
-            // harcode max fee to 10$ = 0.0028 ETH
-            .max_fee(FieldElement::from(2800000000000000_u64))
-            .send()
-            .await
-        {
-            Ok(tx_result) => Ok(tx_result.transaction_hash),
-            Err(e) => {
-                let error_message = format!("An error occurred while renewing domains: {}", e);
-                Err(anyhow::anyhow!(error_message))
-            }
-        },
-        Err(e) => {
-            println!("Error while estimating fee: {:?}", e);
-            let error_message = format!("Error while estimating fee: {}", e);
-            Err(anyhow::anyhow!(error_message))
-        }
-    }
+    // match execution.estimate_fee().await {
+    //     Ok(_) => match execution
+    //         .nonce(nonce)
+    //         // harcode max fee to 10$ = 0.0028 ETH
+    //         .max_fee(FieldElement::from(2800000000000000_u64))
+    //         .send()
+    //         .await
+    //     {
+    //         Ok(tx_result) => Ok(tx_result.transaction_hash),
+    //         Err(e) => {
+    //             let error_message = format!("An error occurred while renewing domains: {}", e);
+    //             Err(anyhow::anyhow!(error_message))
+    //         }
+    //     },
+    //     Err(e) => {
+    //         println!("Error while estimating fee: {:?}", e);
+    //         let error_message = format!("Error while estimating fee: {}", e);
+    //         Err(anyhow::anyhow!(error_message))
+    //     }
+    // }
 }
