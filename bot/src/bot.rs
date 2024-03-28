@@ -476,33 +476,32 @@ pub async fn send_transaction(
     );
     calldata.extend_from_slice(&aggregate_results.meta_hashes);
 
-    Ok(FieldElement::ONE)
-    // let execution = account
-    //     .execute(vec![Call {
-    //         to: auto_renew_contract,
-    //         selector: selector!("batch_renew"),
-    //         calldata: calldata.clone(),
-    //     }])
-    //     .fee_estimate_multiplier(5.0f64);
+    let execution = account
+        .execute(vec![Call {
+            to: auto_renew_contract,
+            selector: selector!("batch_renew"),
+            calldata: calldata.clone(),
+        }])
+        .fee_estimate_multiplier(5.0f64);
 
-    // match execution.estimate_fee().await {
-    //     Ok(_) => match execution
-    //         .nonce(nonce)
-    //         // harcode max fee to 10$ = 0.0028 ETH
-    //         .max_fee(FieldElement::from(2800000000000000_u64))
-    //         .send()
-    //         .await
-    //     {
-    //         Ok(tx_result) => Ok(tx_result.transaction_hash),
-    //         Err(e) => {
-    //             let error_message = format!("An error occurred while renewing domains: {}", e);
-    //             Err(anyhow::anyhow!(error_message))
-    //         }
-    //     },
-    //     Err(e) => {
-    //         println!("Error while estimating fee: {:?}", e);
-    //         let error_message = format!("Error while estimating fee: {}", e);
-    //         Err(anyhow::anyhow!(error_message))
-    //     }
-    // }
+    match execution.estimate_fee().await {
+        Ok(_) => match execution
+            .nonce(nonce)
+            // harcode max fee to 10$ = 0.0028 ETH
+            .max_fee(FieldElement::from(2800000000000000_u64))
+            .send()
+            .await
+        {
+            Ok(tx_result) => Ok(tx_result.transaction_hash),
+            Err(e) => {
+                let error_message = format!("An error occurred while renewing domains: {}", e);
+                Err(anyhow::anyhow!(error_message))
+            }
+        },
+        Err(e) => {
+            println!("Error while estimating fee: {:?}", e);
+            let error_message = format!("Error while estimating fee: {}", e);
+            Err(anyhow::anyhow!(error_message))
+        }
+    }
 }
