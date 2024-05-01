@@ -11,7 +11,7 @@ use std::str::FromStr;
 use crate::{config::Config, starknet_utils::create_jsonrpc_client};
 
 lazy_static::lazy_static! {
-    static ref PRICE_DOMAIN_LEN_1: BigInt = BigInt::from_u128(534246575342466 * 365).unwrap();
+    static ref PRICE_DOMAIN_LEN_1: BigInt = BigInt::from_u128(801369863013699 * 365).unwrap();
     static ref PRICE_DOMAIN_LEN_2: BigInt = BigInt::from_u128(657534246575343 * 365).unwrap();
     static ref PRICE_DOMAIN_LEN_3: BigInt = BigInt::from_u128(160000000000000 * 365).unwrap();
     static ref PRICE_DOMAIN_LEN_4: BigInt = BigInt::from_u128(36986301369863 * 365).unwrap();
