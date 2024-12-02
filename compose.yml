@@ -1,0 +1,7 @@
+services:
+  bot:
+    container_name: bot
+    build:
+      context: .
+      dockerfile: ./bot/Dockerfile
+    restart: "no"
