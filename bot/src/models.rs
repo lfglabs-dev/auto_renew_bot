@@ -58,7 +58,7 @@ pub struct DomainAggregateResult {
     pub meta_hash: Option<String>,
     pub _cursor: Cursor,
     pub auto_renew_contract: FieldElement,
-    pub approval_values: Vec<AutoRenewAllowance>
+    pub approval_values: Vec<AutoRenewAllowance>,
 }
 
 pub struct AggregateResult {

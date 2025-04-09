@@ -8,6 +8,7 @@ use bigdecimal::{
     BigDecimal,
 };
 use bson::doc;
+use chrono::Utc;
 use futures::stream::{self, StreamExt};
 use mongodb::options::FindOneOptions;
 use starknet::accounts::ConnectedAccount;
@@ -36,17 +37,33 @@ lazy_static::lazy_static! {
     static ref RENEW_TIME: FieldElement = FieldElement::from_dec_str("365").unwrap();
 }
 
+/// Filters out entries that were renewed less than 364 days ago
+fn filter_recent_renewals(results: &mut Vec<DomainAggregateResult>) {
+    let now_timestamp = Utc::now().timestamp();
+    let min_renewal_age = 364 * 24 * 60 * 60; // 364 days in seconds
+
+    results.retain(|result| {
+        let last_renewal = result.last_renewal.unwrap_or(0);
+        now_timestamp - last_renewal > min_renewal_age
+    });
+}
+
 pub async fn get_domains_ready_for_renewal(
     config: &Config,
     state: &Arc<AppState>,
     logger: &Logger,
 ) -> Result<HashMap<FieldElement, AggregateResults>> {
     let mut results = get_auto_renewal_data(config, state).await?;
-    let results_altcoins = get_auto_renewal_altcoins_data(config, state).await?;
+    let mut results_altcoins = get_auto_renewal_altcoins_data(config, state).await?;
+
+    // Filter out entries that were renewed less than 364 days ago
+    filter_recent_renewals(&mut results);
+    filter_recent_renewals(&mut results_altcoins);
 
     let mut grouped_results: HashMap<FieldElement, AggregateResults> = HashMap::new();
 
     if results.is_empty() && results_altcoins.is_empty() {
+        logger.warning("No domains to renew".to_string());
         grouped_results.insert(
             config.contract.erc20,
             AggregateResults {
@@ -69,9 +86,9 @@ pub async fn get_domains_ready_for_renewal(
         .iter()
         .map(|result| {
             let test = config
-            .renewers_mapping
-            .get(&result.auto_renew_contract)
-            .unwrap();
+                .renewers_mapping
+                .get(&result.auto_renew_contract)
+                .unwrap();
             (
                 result.renewer_address.clone(),
                 // get the erc20 address for the given auto_renew_contract
@@ -274,7 +291,8 @@ async fn process_aggregate_result(
                 .unwrap();
             println!(
                 "[OK] Domain {}.stark can be renewed by {}",
-                domain_name, to_hex(renewer_addr)
+                domain_name,
+                to_hex(renewer_addr)
             );
             Some(AggregateResult {
                 domain: domain_encoded,
