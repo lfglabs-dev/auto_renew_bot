@@ -21,7 +21,7 @@ lazy_static = "1.4.0"
 reqwest = "0.11.18"
 num-integer = "0.1.45"
 starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "85906137d634c86b07de20fa33071e5cf186ce21" }
-starknet-id = { git = "https://github.com/starknet-id/starknetid.rs", branch = "fix/update_starknet_rs" }
+starknet-id = { git = "https://github.com/starknet-id/starknetid.rs", rev = "04958762b3085311d4f0d865941295a6411a694b" }
 serde_derive = "1.0.183"
 env_logger = "0.10.0"
 tonic = "0.10.0"
