@@ -1,9 +1,6 @@
 use crate::{config::Config, models::TxResult};
 use starknet::{
-    core::types::{
-        MaybePendingTransactionReceipt, PendingTransactionReceipt, TransactionExecutionStatus,
-        TransactionReceipt,
-    },
+    core::types::TransactionExecutionStatus,
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider},
 };
 use url::Url;
@@ -17,40 +14,21 @@ pub async fn check_pending_transactions(conf: &Config, tx_results: &mut Vec<TxRe
     for tx_result in tx_results.iter_mut() {
         if tx_result.reverted.is_none() {
             match client.get_transaction_receipt(tx_result.tx_hash).await {
-                Ok(receipt) => match receipt {
-                    MaybePendingTransactionReceipt::PendingReceipt(pending_receipt) => {
-                        if let PendingTransactionReceipt::Invoke(invocation) = pending_receipt {
-                            match invocation.execution_result.status() {
-                                TransactionExecutionStatus::Succeeded => {
-                                    tx_result.reverted = Some(false);
-                                }
-                                TransactionExecutionStatus::Reverted => {
-                                    tx_result.reverted = Some(true);
-                                    tx_result.revert_reason = invocation
-                                        .execution_result
-                                        .revert_reason()
-                                        .map(|s| s.to_owned());
-                                }
-                            }
+                Ok(receipt_with_block_info) => {
+                    let receipt = receipt_with_block_info.receipt;
+                    match receipt.execution_result().status() {
+                        TransactionExecutionStatus::Succeeded => {
+                            tx_result.reverted = Some(false);
+                        }
+                        TransactionExecutionStatus::Reverted => {
+                            tx_result.reverted = Some(true);
+                            tx_result.revert_reason = receipt
+                                .execution_result()
+                                .revert_reason()
+                                .map(|s| s.to_owned());
                         }
                     }
-                    MaybePendingTransactionReceipt::Receipt(receipt) => {
-                        if let TransactionReceipt::Invoke(invocation) = receipt {
-                            match invocation.execution_result.status() {
-                                TransactionExecutionStatus::Succeeded => {
-                                    tx_result.reverted = Some(false);
-                                }
-                                TransactionExecutionStatus::Reverted => {
-                                    tx_result.reverted = Some(true);
-                                    tx_result.revert_reason = invocation
-                                        .execution_result
-                                        .revert_reason()
-                                        .map(|s| s.to_owned());
-                                }
-                            }
-                        }
-                    }
-                },
+                }
                 Err(e) => {
                     eprintln!(
                         "Error checking status for tx_hash {}: {}",

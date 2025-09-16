@@ -12,9 +12,10 @@ use chrono::Utc;
 use futures::stream::{self, StreamExt};
 use mongodb::options::FindOneOptions;
 use starknet::accounts::ConnectedAccount;
+use starknet::core::types::Call;
 use starknet::{
-    accounts::{Account, Call, SingleOwnerAccount},
-    core::types::FieldElement,
+    accounts::{Account, SingleOwnerAccount},
+    core::types::Felt,
     macros::selector,
     providers::{jsonrpc::HttpTransport, JsonRpcClient},
     signers::LocalWallet,
@@ -34,7 +35,7 @@ use crate::utils::{from_uint256, hex_to_bigdecimal, to_uint256};
 use crate::{config::Config, models::AppState};
 
 lazy_static::lazy_static! {
-    static ref RENEW_TIME: FieldElement = FieldElement::from_dec_str("365").unwrap();
+    static ref RENEW_TIME: Felt = Felt::from_dec_str("365").unwrap();
 }
 
 /// Filters out entries that were renewed less than 364 days ago
@@ -52,7 +53,7 @@ pub async fn get_domains_ready_for_renewal(
     config: &Config,
     state: &Arc<AppState>,
     logger: &Logger,
-) -> Result<HashMap<FieldElement, AggregateResults>> {
+) -> Result<HashMap<Felt, AggregateResults>> {
     let mut results = get_auto_renewal_data(config, state).await?;
     let mut results_altcoins = get_auto_renewal_altcoins_data(config, state).await?;
 
@@ -60,7 +61,7 @@ pub async fn get_domains_ready_for_renewal(
     filter_recent_renewals(&mut results);
     filter_recent_renewals(&mut results_altcoins);
 
-    let mut grouped_results: HashMap<FieldElement, AggregateResults> = HashMap::new();
+    let mut grouped_results: HashMap<Felt, AggregateResults> = HashMap::new();
 
     if results.is_empty() && results_altcoins.is_empty() {
         logger.warning("No domains to renew".to_string());
@@ -81,14 +82,12 @@ pub async fn get_domains_ready_for_renewal(
     // merge all results together
     results.extend(results_altcoins.iter().cloned());
 
+    println!("renewers_mapping: {:?}", config.renewers_mapping);
+
     // Fetch balances for all renewers
     let renewer_and_erc20: Vec<(String, String)> = results
         .iter()
         .map(|result| {
-            let test = config
-                .renewers_mapping
-                .get(&result.auto_renew_contract)
-                .unwrap();
             (
                 result.renewer_address.clone(),
                 // get the erc20 address for the given auto_renew_contract
@@ -138,25 +137,24 @@ pub async fn get_domains_ready_for_renewal(
                     .cloned()
                     .expect("Balance not found for this erc20");
                 let renewal_price_eth = get_renewal_price_eth(result.domain.clone());
-                let renewal_price =
-                    if FieldElement::from_hex_be(erc20).unwrap() == config.contract.erc20 {
-                        renewal_price_eth
-                    } else {
-                        match get_altcoin_quote(config, erc20.to_string()).await {
-                            Ok(quote) => {
-                                (quote * renewal_price_eth)
-                                    / BigInt::from_str("1000000000000000000").unwrap()
-                            }
-                            Err(e) => {
-                                // in case get_altcoin_quote endpoint returns an error we panic with the error
-                                logger.severe(format!(
-                                    "Error while fetching quote on starknetid server: {:?}",
-                                    e
-                                ));
-                                panic!("Error while fetching quote on starknetid server: {:?}", e)
-                            }
+                let renewal_price = if Felt::from_hex(erc20).unwrap() == config.contract.erc20 {
+                    renewal_price_eth
+                } else {
+                    match get_altcoin_quote(config, erc20.to_string()).await {
+                        Ok(quote) => {
+                            (quote * renewal_price_eth)
+                                / BigInt::from_str("1000000000000000000").unwrap()
                         }
-                    };
+                        Err(e) => {
+                            // in case get_altcoin_quote endpoint returns an error we panic with the error
+                            logger.severe(format!(
+                                "Error while fetching quote on starknetid server: {:?}",
+                                e
+                            ));
+                            panic!("Error while fetching quote on starknetid server: {:?}", e)
+                        }
+                    }
+                };
                 let output = process_aggregate_result(
                     state,
                     result.clone(),
@@ -227,7 +225,7 @@ async fn process_aggregate_result(
         return None;
     }
 
-    let renewer_addr = FieldElement::from_hex_be(&result.renewer_address).unwrap();
+    let renewer_addr = Felt::from_hex(&result.renewer_address).unwrap();
     // map the vec of approval_values to get the approval_value for the erc20_addr selected
     let erc20_allowance = if let Some(approval_value) = result
         .approval_values
@@ -243,9 +241,9 @@ async fn process_aggregate_result(
 
     // Check user meta hash
     let mut tax_price = BigDecimal::from(0);
-    let mut meta_hash = FieldElement::ZERO;
+    let mut meta_hash = Felt::ZERO;
     if let Some(hash) = result.meta_hash {
-        meta_hash = FieldElement::from_hex_be(&hash).unwrap();
+        meta_hash = Felt::from_hex(&hash).unwrap();
         if hash != "0" {
             let decimal_meta_hash =
                 BigInt::parse_bytes(hash.trim_start_matches("0x").as_bytes(), 16).unwrap();
@@ -322,7 +320,7 @@ pub async fn renew_domains(
     config: &Config,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     mut aggregate_results: AggregateResults,
-    auto_renew_contract: &FieldElement,
+    auto_renew_contract: &Felt,
     logger: &Logger,
 ) -> Result<()> {
     logger.info(format!(
@@ -341,13 +339,12 @@ pub async fn renew_domains(
         && !aggregate_results.meta_hashes.is_empty()
     {
         let size = aggregate_results.domains.len().min(75);
-        let domains_to_renew: Vec<FieldElement> =
-            aggregate_results.domains.drain(0..size).collect();
-        let renewers: Vec<FieldElement> = aggregate_results.renewers.drain(0..size).collect();
+        let domains_to_renew: Vec<Felt> = aggregate_results.domains.drain(0..size).collect();
+        let renewers: Vec<Felt> = aggregate_results.renewers.drain(0..size).collect();
         let domain_prices: Vec<BigDecimal> =
             aggregate_results.domain_prices.drain(0..size).collect();
         let tax_prices: Vec<BigDecimal> = aggregate_results.tax_prices.drain(0..size).collect();
-        let meta_hashes: Vec<FieldElement> = aggregate_results.meta_hashes.drain(0..size).collect();
+        let meta_hashes: Vec<Felt> = aggregate_results.meta_hashes.drain(0..size).collect();
 
         match send_transaction(
             account,
@@ -379,7 +376,7 @@ pub async fn renew_domains(
                 });
 
                 // We only inscrease nonce if no error occurred in the previous transaction
-                nonce += FieldElement::ONE;
+                nonce += Felt::ONE;
             }
             Err(e) => {
                 if e.to_string().contains("Error while estimating fee") {
@@ -436,20 +433,16 @@ pub async fn renew_domains(
 
 pub async fn send_transaction(
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
-    auto_renew_contract: FieldElement,
+    auto_renew_contract: Felt,
     aggregate_results: AggregateResults,
-    nonce: FieldElement,
-) -> Result<FieldElement> {
-    let mut calldata: Vec<FieldElement> = Vec::new();
-    calldata
-        .push(FieldElement::from_dec_str(&aggregate_results.domains.len().to_string()).unwrap());
+    nonce: Felt,
+) -> Result<Felt> {
+    let mut calldata: Vec<Felt> = Vec::new();
+    calldata.push(Felt::from_dec_str(&aggregate_results.domains.len().to_string()).unwrap());
     calldata.extend_from_slice(&aggregate_results.domains);
-    calldata
-        .push(FieldElement::from_dec_str(&aggregate_results.renewers.len().to_string()).unwrap());
+    calldata.push(Felt::from_dec_str(&aggregate_results.renewers.len().to_string()).unwrap());
     calldata.extend_from_slice(&aggregate_results.renewers);
-    calldata.push(
-        FieldElement::from_dec_str(&aggregate_results.domain_prices.len().to_string()).unwrap(),
-    );
+    calldata.push(Felt::from_dec_str(&aggregate_results.domain_prices.len().to_string()).unwrap());
 
     println!("domains:");
     for x in &aggregate_results.domains {
@@ -482,31 +475,29 @@ pub async fn send_transaction(
         calldata.push(high);
     }
 
-    calldata
-        .push(FieldElement::from_dec_str(&aggregate_results.tax_prices.len().to_string()).unwrap());
+    calldata.push(Felt::from_dec_str(&aggregate_results.tax_prices.len().to_string()).unwrap());
     for tax_price in &aggregate_results.tax_prices {
         let (low, high) = to_uint256(tax_price.to_bigint().unwrap());
         calldata.push(low);
         calldata.push(high);
     }
-    calldata.push(
-        FieldElement::from_dec_str(&aggregate_results.meta_hashes.len().to_string()).unwrap(),
-    );
+    calldata.push(Felt::from_dec_str(&aggregate_results.meta_hashes.len().to_string()).unwrap());
     calldata.extend_from_slice(&aggregate_results.meta_hashes);
 
     let execution = account
-        .execute(vec![Call {
+        .execute_v3(vec![Call {
             to: auto_renew_contract,
             selector: selector!("batch_renew"),
             calldata: calldata.clone(),
         }])
-        .fee_estimate_multiplier(5.0f64);
+        .gas_estimate_multiplier(5.0f64);
+    // .fee_estimate_multiplier(5.0f64);
 
     match execution.estimate_fee().await {
         Ok(_) => match execution
             .nonce(nonce)
             // harcode max fee to 10$ = 0.0028 ETH
-            .max_fee(FieldElement::from(2800000000000000_u64))
+            // .max_fee(Felt::from(2800000000000000_u64))
             .send()
             .await
         {

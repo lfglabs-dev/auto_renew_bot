@@ -4,7 +4,7 @@ use bigdecimal::BigDecimal;
 use bson::DateTime;
 use mongodb::Database;
 use serde::{Deserialize, Serialize};
-use starknet::core::types::FieldElement;
+use starknet::core::types::Felt;
 
 pub struct AppState {
     pub db: Database,
@@ -57,27 +57,27 @@ pub struct DomainAggregateResult {
     pub last_renewal: Option<i64>,
     pub meta_hash: Option<String>,
     pub _cursor: Cursor,
-    pub auto_renew_contract: FieldElement,
+    pub auto_renew_contract: Felt,
     pub approval_values: Vec<AutoRenewAllowance>,
 }
 
 pub struct AggregateResult {
-    pub domain: FieldElement,
-    pub renewer_addr: FieldElement,
+    pub domain: Felt,
+    pub renewer_addr: Felt,
     pub domain_price: BigDecimal,
     pub tax_price: BigDecimal,
-    pub meta_hash: FieldElement,
-    pub auto_renew_contract: FieldElement,
+    pub meta_hash: Felt,
+    pub auto_renew_contract: Felt,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AggregateResults {
-    pub domains: Vec<FieldElement>,
-    pub renewers: Vec<FieldElement>,
+    pub domains: Vec<Felt>,
+    pub renewers: Vec<Felt>,
     pub domain_prices: Vec<BigDecimal>,
     pub tax_prices: Vec<BigDecimal>,
-    pub meta_hashes: Vec<FieldElement>,
-    pub auto_renew_contracts: Vec<FieldElement>,
+    pub meta_hashes: Vec<Felt>,
+    pub auto_renew_contracts: Vec<Felt>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -102,7 +102,7 @@ pub struct States {
 
 #[derive(Debug, Clone)]
 pub struct TxResult {
-    pub tx_hash: FieldElement,
+    pub tx_hash: Felt,
     pub reverted: Option<bool>,
     pub revert_reason: Option<String>,
     pub domains_renewed: usize,
