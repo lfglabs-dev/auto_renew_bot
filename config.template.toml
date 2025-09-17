@@ -25,6 +25,7 @@ port = [8005, 8007, 8008]
 server_url = "http://0.0.0.0"
 
 [watchtower]
+enabled = false
 endpoint = "https://api.watchtower.starknet.id/service/add_message"
 app_id = "XXXXXXXXXXXXXXXXX"
 token = "XXXXXXXXXXXXXXXXX"

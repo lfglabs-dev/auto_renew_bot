@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use bigdecimal::{num_bigint::BigInt, FromPrimitive};
 use serde::Deserialize;
 use starknet::{
-    core::types::{BlockId, BlockTag, FieldElement, FunctionCall},
+    core::types::{BlockId, BlockTag, Felt, FunctionCall},
     macros::selector,
     providers::Provider,
 };
@@ -61,8 +61,8 @@ pub async fn get_altcoin_quote(config: &Config, erc20: String) -> Result<BigInt>
 pub async fn get_balances(
     config: &Config,
     mut renewer_and_erc20: Vec<(String, String)>,
-) -> Vec<FieldElement> {
-    let mut balances: Vec<FieldElement> = vec![];
+) -> Vec<Felt> {
+    let mut balances: Vec<Felt> = vec![];
 
     while !renewer_and_erc20.is_empty() {
         let size = renewer_and_erc20.len().min(2500);
@@ -78,13 +78,13 @@ pub async fn get_balances(
 pub async fn fetch_users_balances(
     config: &Config,
     renewers_and_erc20: Vec<(String, String)>,
-) -> Vec<FieldElement> {
-    let mut calls: Vec<FieldElement> = vec![FieldElement::from(renewers_and_erc20.len())];
+) -> Vec<Felt> {
+    let mut calls: Vec<Felt> = vec![Felt::from(renewers_and_erc20.len())];
     for (renewer, erc20) in &renewers_and_erc20 {
-        calls.push(FieldElement::from_hex_be(erc20).unwrap());
+        calls.push(Felt::from_hex(erc20).unwrap());
         calls.push(selector!("balanceOf"));
-        calls.push(FieldElement::ONE);
-        calls.push(FieldElement::from_hex_be(renewer).unwrap());
+        calls.push(Felt::ONE);
+        calls.push(Felt::from_hex(renewer).unwrap());
     }
 
     let provider = create_jsonrpc_client(config);

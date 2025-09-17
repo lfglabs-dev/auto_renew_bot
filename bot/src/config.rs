@@ -2,7 +2,7 @@ use serde::de::MapAccess;
 use serde::de::Visitor;
 use serde::Deserialize;
 use serde::Deserializer;
-use starknet::core::types::FieldElement;
+use starknet::core::types::Felt;
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
@@ -18,12 +18,12 @@ macro_rules! pub_struct {
 }
 
 pub_struct!(Clone, Deserialize; Contract {
-    starknetid: FieldElement,
-    naming: FieldElement,
-    renewal: FieldElement,
-    erc20: FieldElement,
-    pricing: FieldElement,
-    multicall: FieldElement,
+    starknetid: Felt,
+    naming: Felt,
+    renewal: Felt,
+    erc20: Felt,
+    pricing: Felt,
+    multicall: Felt,
 });
 
 pub_struct!(Clone, Deserialize; Database {
@@ -34,8 +34,8 @@ pub_struct!(Clone, Deserialize; Database {
 });
 
 pub_struct!(Clone, Deserialize; MyAccount {
-    private_key: FieldElement,
-    address: FieldElement,
+    private_key: Felt,
+    address: Felt,
 });
 
 pub_struct!(Clone, Deserialize; Renewals {
@@ -71,8 +71,8 @@ pub_struct!(Clone, Deserialize; Server {
 });
 
 pub_struct!(Clone, Deserialize; Renewer {
-    address: FieldElement,
-    renewal_contract: FieldElement,
+    address: Felt,
+    renewal_contract: Felt,
 });
 
 pub_struct!(Clone; Config {
@@ -84,7 +84,7 @@ pub_struct!(Clone; Config {
     rpc: Rpc,
     watchtower: Watchtower,
     server: Server,
-    renewers_mapping: HashMap<FieldElement, FieldElement>,
+    renewers_mapping: HashMap<Felt, Felt>,
 });
 
 impl<'de> Deserialize<'de> for Config {
