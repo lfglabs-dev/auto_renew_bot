@@ -24,7 +24,7 @@ starknet = { git = "https://github.com/xJonathanLEI/starknet-rs", rev = "8590613
 starknet-id = { git = "https://github.com/starknet-id/starknetid.rs", rev = "04958762b3085311d4f0d865941295a6411a694b" }
 serde_derive = "1.0.183"
 env_logger = "0.10.0"
-tonic = "0.10.0"
+tonic = "0.14.6"
 prost = "0.12.1"
 bigdecimal = { version = "0.4", features = ["serde"] }
 
